@@ -22,9 +22,22 @@ export const createOrUpdateChart = (
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  // 既存のチャートを破棄
+  // 既存のチャートを安全に破棄
   if (chartInstances[canvasId]) {
-    chartInstances[canvasId].destroy();
+    try {
+      chartInstances[canvasId].destroy();
+    } catch (e) {
+      console.warn(`チャート破棄エラー: ${canvasId}`, e);
+    }
+  }
+
+  // Chart.jsのグローバルチャートインスタンスもクリア
+  const Chart = (window as any).Chart;
+  if (Chart.getChart) {
+    const existingChart = Chart.getChart(canvas);
+    if (existingChart) {
+      existingChart.destroy();
+    }
   }
 
   // 新しいチャートを作成

@@ -55,9 +55,6 @@ db-shell: ## PostgreSQLに接続
 minio-shell: ## MinIOコンテナに接続
 	cd deployment && docker-compose exec minio sh
 
-airflow-shell: ## Airflowコンテナに接続
-	cd deployment && docker-compose exec airflow bash
-
 test-data: ## テストデータをロード
 	@echo "テストデータをロード中..."
 	# TODO: implement test data loading
@@ -74,6 +71,49 @@ docs: ## ドキュメント生成
 	@echo "設計書: docs/architecture.yaml"
 	@echo "README: README.md"
 	@echo "ドキュメント確認完了"
+
+# ETL Airflow環境管理
+airflow-start: ## Airflow ETL環境を起動
+	@echo "🚀 Airflow ETL環境を起動しています..."
+	mkdir -p airflow/{dags,logs,plugins,config}
+	echo "AIRFLOW_UID=50000" > airflow/.env
+	cd airflow && docker-compose -f docker-compose.airflow.yml up -d
+	@echo "✅ Airflow起動完了"
+	@echo "   Webserver: http://localhost:8082 (admin/admin)"
+
+airflow-stop: ## Airflow ETL環境を停止
+	@echo "⏹️ Airflow ETL環境を停止しています..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml down
+	@echo "停止完了"
+
+airflow-logs: ## Airflow ログを表示
+	cd airflow && docker-compose -f docker-compose.airflow.yml logs -f
+
+airflow-shell: ## Airflow Webserverに接続
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver bash
+
+airflow-trigger: ## ETL DAGを手動実行
+	@echo "🔥 Tokyo Crime School ETL DAGを手動実行..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger tokyo_crime_school_etl
+
+airflow-status: ## Airflow DAG状態確認
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
+
+# 統合開発フロー
+full-start: start airflow-start ## フル環境起動 (アプリ + Airflow)
+
+full-stop: stop airflow-stop ## フル環境停止
+
+add-data: ## 台東区・文京区データ追加
+	@echo "📊 台東区・文京区データを追加しています..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/add_taito_bunkyo_data.sql
+	@echo "✅ データ追加完了"
+
+check-data: ## データベース状態確認
+	@echo "🔍 データベース状態を確認しています..."
+	cd deployment && ./check_data.sh
+
+etl-run: airflow-trigger ## ETL実行 (DAGトリガー)
 
 # 開発用ショートカット
 dev: setup start ## セットアップ + 起動 (開発開始時)
