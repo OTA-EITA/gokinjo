@@ -1,0 +1,197 @@
+project:
+  name: neighborhood-mapping-poc
+  description: >
+    東京23区の町丁目単位で「学校 × 治安」データを統合・可視化するPoC基盤。
+    段階的実装により、デモ環境から本番運用まで対応する。
+  current_phase: "Phase 1: デモ環境安定化"
+
+scope:
+  target_region: tokyo-23-wards (現在は2区のサンプル)
+  data_layers:
+    - crime (サンプルデータ)
+    - school (サンプルデータ)
+  granularity: town-chome
+
+architecture:
+  # === PHASE 1: 現在の実装 (デモ重視) ===
+  current_implementation:
+    orchestration: 
+      tool: manual_scripts  # Airflowは第2段階で導入
+      note: "シンプルな構成でデモに特化"
+    
+    database:
+      engine: postgresql
+      extension: postgis
+      docker_service: postgis
+      port: 5432
+      schemas:
+        areas:
+          columns:
+            - id: serial
+            - ward_code: text
+            - town_code: text  
+            - name: text
+            - geom: polygon(4326)
+            - created_at: timestamp
+            - updated_at: timestamp
+        schools:
+          columns:
+            - id: serial
+            - name: text
+            - type: enum [elementary, junior_high, high]
+            - public_private: enum [public, private]
+            - location: point(4326)
+            - area_id: fk -> areas.id
+            - address: text
+            - created_at: timestamp
+            - updated_at: timestamp
+        crimes:
+          columns:
+            - id: serial
+            - category: text
+            - date: date
+            - location: point(4326)
+            - area_id: fk -> areas.id
+            - description: text
+            - created_at: timestamp
+            - updated_at: timestamp
+
+    api:
+      protocol: http_rest  # 当面はHTTP REST、将来gRPCに移行可能
+      language: go
+      port: 8081
+      endpoints:
+        - GET /health -> HealthResponse
+        - GET /v1/areas -> AreaList
+        - GET /v1/areas/{ward_code}/{town_code}/schools -> SchoolList
+        - GET /v1/areas/{ward_code}/{town_code}/crimes -> CrimeList (実装予定)
+        - GET /v1/schools/{id}/safety-score -> SafetyScore (実装予定)
+
+    frontend:
+      framework: react + leaflet
+      serving: python_http_server (開発用)
+      port: 3001
+      features:
+        implemented:
+          - area_selection: エリア選択UI
+          - school_markers: 学校マーカー表示
+          - interactive_map: Leaflet地図表示
+        todo:
+          - crime_markers: 犯罪データマーカー
+          - layer_toggle: レイヤー切替機能
+          - safety_score_display: 安全性スコア表示
+
+    storage:
+      minio:
+        docker_service: minio
+        console_port: 9001
+        api_port: 9000
+        credentials:
+          user: minio
+          password: minio123
+        buckets:
+          - tokyo-crime-school
+        note: "第2段階でETLデータ保存に使用予定"
+
+  # === PHASE 2: データ処理自動化 (運用検証) ===
+  future_implementation:
+    orchestration:
+      tool: airflow
+      executor: LocalExecutor → KubernetesExecutor
+      dag:
+        name: tokyo_crime_school_etl
+        schedule: daily
+        structure:
+          - download_raw_files
+          - transform_by_ward
+          - normalize_to_parquet
+          - load_postgis
+    
+    etl:
+      format: parquet
+      staging: s3 (minio)
+      process_flow:
+        - raw: s3://tokyo-crime-school/raw
+        - processed: s3://tokyo-crime-school/processed
+        - curated: s3://tokyo-crime-school/curated
+
+    api:
+      protocol: grpc + grpc_gateway
+      services:
+        CrimeSchoolService:
+          methods:
+            - getSchoolsByArea(ward_code, town_code) -> SchoolList
+            - getCrimesByArea(ward_code, town_code) -> CrimeList
+            - getSafetyScore(school_id) -> SafetyScore
+
+development:
+  current:
+    platform: docker-compose
+    components:
+      - postgis (PostgreSQL + PostGIS)
+      - minio (S3互換ストレージ)
+    manual_processes:
+      - api_server: manual go run
+      - frontend: manual python http.server
+      - data_loading: SQL scripts
+    
+  phase1_improvements:
+    - crime_endpoint: APIにcrimeエンドポイント追加
+    - layer_toggle: フロントエンドにレイヤー切替追加
+    - safety_score: 学校周辺犯罪密度算出
+    - docker_compose_integration: API・フロントエンドのDocker化
+
+deployment:
+  step1_current:
+    platform: docker-compose (minimal)
+    goal: stable demo environment
+    status: ✅ 動作中
+    
+  step2_enhanced:
+    platform: docker-compose (full stack)
+    goal: complete local development
+    status: 🔄 第1段階完了後に実装
+    
+  step3_cloud_poc:
+    platform: aws ecs fargate + rds + s3
+    goal: realistic cloud demo
+    status: ❌ 第2段階完了後に検討
+    
+  step4_production:
+    platform: aws eks
+    goal: scalable nationwide platform
+    status: ❌ 将来計画
+
+sample_data:
+  areas:
+    - ward: "13101" (千代田区)
+      town: "001" (丸の内)
+    - ward: "13102" (中央区)  
+      town: "001" (銀座)
+  schools: 2 schools with location data
+  crimes: 2 sample crimes with location data
+
+phase_decision_criteria:
+  phase1_completion:
+    - ✅ 環境の完全安定化
+    - ✅ 犯罪データ表示機能
+    - ✅ レイヤー切替機能
+    - ✅ 安全性スコア表示
+    - ✅ デモ用のUI/UX完成
+    
+  phase2_triggers:
+    - 実データAPI連携が必要
+    - 複数区対応が必要
+    - 定期データ更新が必要
+    - 本格データフロー検証が必要
+
+next_actions:
+  immediate:
+    - environment_cleanup: make clean && make setup && make start
+    - api_crime_endpoint: 犯罪データAPIエンドポイント実装
+    - frontend_layer_toggle: レイヤー切替UI実装
+    
+  within_week:
+    - safety_score_calculation: 学校周辺犯罪密度算出
+    - demo_data_enhancement: サンプルデータの充実
+    - documentation_update: 現状反映のドキュメント更新
