@@ -1,4 +1,4 @@
-// API関連の型定義
+// ========== 型定義 ==========
 
 export interface Area {
   id: number;
@@ -43,29 +43,26 @@ export interface ApiResponse<T> {
   total_count: number;
 }
 
-// UI関連の型定義
 export interface LayerState {
   showSchools: boolean;
   showCrimes: boolean;
   showSafetyScores: boolean;
+  showHeatmap: boolean;
 }
 
-export interface MarkerGroups {
-  schoolMarkers: L.LayerGroup | null;
-  crimeMarkers: L.LayerGroup | null;
-  safetyCircles: L.LayerGroup | null;
+export interface FilterState {
+  searchTerm: string;
+  selectedSchoolTypes: School['type'][];
+  selectedCrimeCategories: string[];
+  safetyScoreRange: [number, number];
+  showPublicOnly: boolean;
+  showPrivateOnly: boolean;
 }
 
-// グローバル型拡張（UMD対応）
-declare global {
-  interface Window {
-    L: any; // Leaflet UMDグローバル
-    React: any; // React UMDグローバル  
-    ReactDOM: any; // ReactDOM UMDグローバル
-  }
-  
-  // グローバルなLeafletの型定義
-  var L: any;
-  var React: any;
-  var ReactDOM: any;
+export interface StatisticsData {
+  crimeByCategory: Record<string, number>;
+  safetyScoreDistribution: Record<string, number>;
+  crimeTrends: { date: string; count: number }[];
+  schoolTypeDistribution: Record<School['type'], number>;
+  publicPrivateDistribution: Record<School['public_private'], number>;
 }

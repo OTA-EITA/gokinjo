@@ -1,0 +1,31 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.sidebar {
+  width: 350px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  overflow-y: auto;
+  border-right: 1px solid #dee2e6;
+}
+
+.map {
+  flex: 1;
+  height: 100vh;
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: #6c757d;
+}
+
+/* Additional styles will be added by the App component */

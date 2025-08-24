@@ -1,268 +1,83 @@
-// TypeScript版近隣情報マッピングアプリ（シンプル構成・型引数なし）
+// TypeScript版近隣情報マッピングアプリ（モジュール化版）
 
-// ========== 型定義 ==========
-interface Area {
-  id: number;
-  ward_code: string;
-  town_code: string;
-  name: string;
-}
+// ========== インポート ==========
+import { 
+  Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData 
+} from './types/index';
+import { 
+  API_CONFIG, MAP_CONFIG, HEATMAP_CONFIG, ICON_CONFIG, SAFETY_CONFIG, UI_CONFIG, LABELS 
+} from './constants/index';
+import { 
+  getSchoolIcon, getCrimeIcon, getSafetyScoreColor, getSafetyLevelLabel, 
+  getSchoolTypeLabel, getPublicPrivateLabel, buildApiUrl, safeFetch,
+  prepareHeatmapData, getAvailableCrimeCategories
+} from './utils/helpers';
+import { 
+  filterAreas, filterSchools, filterCrimes, filterSafetyScores 
+} from './utils/filters';
+import { calculateStatistics } from './utils/statistics';
+import { 
+  createOrUpdateChart, getCrimeChartConfig, getSafetyChartConfig, getSchoolTypeChartConfig 
+} from './utils/charts';
+import { generateCSVData, generatePDFReport, downloadCSV } from './utils/export';
 
-interface School {
-  id: number;
-  name: string;
-  type: 'elementary' | 'junior_high' | 'high';
-  public_private: 'public' | 'private';
-  latitude: number;
-  longitude: number;
-  address: string;
-  area_id: number;
-}
+// ========== React フックの取得 ==========
+const React = (window as any).React;
+const { useEffect } = React;
 
-interface Crime {
-  id: number;
-  category: string;
-  date: string;
-  latitude: number;
-  longitude: number;
-  description: string;
-  area_id: number;
-}
-
-interface SafetyScore {
-  school_id: number;
-  school_name: string;
-  score: number;
-  crime_count: number;
-  radius_meters: number;
-  last_updated: string;
-  score_level: 'very_safe' | 'safe' | 'moderate' | 'caution';
-}
-
-interface ApiResponse<T> {
-  [key: string]: T | number;
-  total_count: number;
-}
-
-interface LayerState {
-  showSchools: boolean;
-  showCrimes: boolean;
-  showSafetyScores: boolean;
-}
-
-// ========== 定数定義 ==========
-const API_CONFIG = {
-  BASE_URL: 'http://localhost:8081',
-  ENDPOINTS: {
-    HEALTH: '/health',
-    AREAS: '/v1/areas',
-    SCHOOLS: '/v1/areas/{ward_code}/{town_code}/schools',
-    CRIMES: '/v1/areas/{ward_code}/{town_code}/crimes',
-    SAFETY_SCORE: '/v1/schools/{id}/safety-score',
-    SAFETY_SCORES: '/v1/areas/{ward_code}/{town_code}/safety-scores',
-  }
-} as const;
-
-const MAP_CONFIG = {
-  CENTER: [35.6762, 139.6503] as [number, number],
-  DEFAULT_ZOOM: 11,
-  TILE_LAYER: {
-    URL: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    ATTRIBUTION: '© OpenStreetMap contributors'
-  },
-  FIT_BOUNDS_PADDING: 0.1
-} as const;
-
-const ICON_CONFIG = {
-  BASE_URL: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img',
-  SCHOOL_COLORS: {
-    elementary: 'green',
-    junior_high: 'orange',
-    high: 'red',
-    default: 'blue'
-  },
-  CRIME_COLORS: {
-    '窃盗': 'violet',
-    '暴行': 'red', 
-    '詐欺': 'yellow',
-    default: 'grey'
-  } as Record<string, string>,
-  SIZES: {
-    SCHOOL: [25, 41] as [number, number],
-    CRIME: [20, 32] as [number, number],
-    ANCHOR_SCHOOL: [12, 41] as [number, number],
-    ANCHOR_CRIME: [10, 32] as [number, number],
-    POPUP_ANCHOR: [1, -34] as [number, number],
-    POPUP_ANCHOR_CRIME: [1, -30] as [number, number]
-  }
-} as const;
-
-const SAFETY_CONFIG = {
-  RADIUS_METERS: 500,
-  SCORE_LEVELS: {
-    VERY_SAFE: { min: 90, color: 'darkgreen', label: '非常に安全' },
-    SAFE: { min: 70, color: 'green', label: '安全' },
-    MODERATE: { min: 50, color: 'orange', label: '注意' },
-    CAUTION: { min: 0, color: 'red', label: '警戒' }
-  },
-  CIRCLE_STYLE: {
-    fillOpacity: 0.2,
-    weight: 2
-  }
-} as const;
-
-const UI_CONFIG = {
-  SIDEBAR_WIDTH: 350,
-  LOADING_DELAY: 100,
-  ANIMATION_DURATION: 200
-} as const;
-
-const LABELS = {
-  SCHOOL_TYPES: {
-    elementary: '小学校',
-    junior_high: '中学校',
-    high: '高等学校'
-  } as Record<School['type'], string>,
-  PUBLIC_PRIVATE: {
-    public: '公立',
-    private: '私立'
-  } as Record<School['public_private'], string>,
-  SAFETY_LEVELS: {
-    very_safe: '非常に安全',
-    safe: '安全',
-    moderate: '注意',
-    caution: '警戒'
-  } as Record<SafetyScore['score_level'], string>,
-  UI: {
-    APP_TITLE: '近隣情報マッピング',
-    APP_SUBTITLE: 'Tokyo Crime & Schools (TypeScript)',
-    LOADING: 'Loading...',
-    LAYER_CONTROLS: 'レイヤー表示',
-    AREA_SELECTION: 'エリア選択:',
-    SELECTED_PREFIX: '選択中: ',
-    SCHOOL_LIST: '学校一覧',
-    SAFETY_SCORES: '安全性スコア',
-    SCHOOL_LAYER: '学校',
-    CRIME_LAYER: '犯罪',
-    SAFETY_RANGE_LAYER: '安全範囲 (半径500m)'
-  }
-} as const;
-
-const ERROR_MESSAGES = {
-  FAILED_TO_LOAD_AREAS: 'Failed to load areas',
-  FAILED_TO_LOAD_AREA_DATA: 'Failed to load area data',
-  FAILED_TO_INITIALIZE_MAP: 'Failed to initialize map',
-  HTTP_ERROR: 'HTTP error! status:',
-  NETWORK_ERROR: 'Network error occurred'
-} as const;
-
-// ========== ユーティリティ関数 ==========
-
-/**
- * 学校タイプに応じたアイコンURLを取得
- */
-const getSchoolIcon = (school: School): string => {
-  const color = ICON_CONFIG.SCHOOL_COLORS[school.type] || ICON_CONFIG.SCHOOL_COLORS.default;
-  return `${ICON_CONFIG.BASE_URL}/marker-icon-2x-${color}.png`;
+// TypeScriptに適用可能な型付きuseState
+const useState = <T>(initialState: T | (() => T)): [T, (value: T | ((prev: T) => T)) => void] => {
+  return React.useState(initialState);
 };
 
-/**
- * 犯罪タイプに応じたアイコンURLを取得
- */
-const getCrimeIcon = (crime: Crime): string => {
-  const color = ICON_CONFIG.CRIME_COLORS[crime.category] || ICON_CONFIG.CRIME_COLORS.default;
-  return `${ICON_CONFIG.BASE_URL}/marker-icon-2x-${color}.png`;
-};
-
-/**
- * 安全スコアに応じた色を取得
- */
-const getSafetyScoreColor = (score: number): string => {
-  if (score >= SAFETY_CONFIG.SCORE_LEVELS.VERY_SAFE.min) return SAFETY_CONFIG.SCORE_LEVELS.VERY_SAFE.color;
-  if (score >= SAFETY_CONFIG.SCORE_LEVELS.SAFE.min) return SAFETY_CONFIG.SCORE_LEVELS.SAFE.color;
-  if (score >= SAFETY_CONFIG.SCORE_LEVELS.MODERATE.min) return SAFETY_CONFIG.SCORE_LEVELS.MODERATE.color;
-  return SAFETY_CONFIG.SCORE_LEVELS.CAUTION.color;
-};
-
-/**
- * 安全レベルの日本語ラベルを取得
- */
-const getSafetyLevelLabel = (level: SafetyScore['score_level']): string => {
-  return LABELS.SAFETY_LEVELS[level] || level;
-};
-
-/**
- * 学校種別の日本語ラベルを取得
- */
-const getSchoolTypeLabel = (type: School['type']): string => {
-  return LABELS.SCHOOL_TYPES[type] || type;
-};
-
-/**
- * 公立/私立の日本語ラベルを取得
- */
-const getPublicPrivateLabel = (publicPrivate: School['public_private']): string => {
-  return LABELS.PUBLIC_PRIVATE[publicPrivate] || publicPrivate;
-};
-
-/**
- * APIエンドポイントURLを構築
- */
-const buildApiUrl = (endpoint: string, params: Record<string, string> = {}): string => {
-  let url = endpoint;
-  Object.entries(params).forEach(([key, value]) => {
-    url = url.replace(`{${key}}`, value);
-  });
-  return url;
-};
-
-/**
- * 安全なfetch処理
- */
-const safeFetch = async (url: string): Promise<any> => {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`${ERROR_MESSAGES.HTTP_ERROR} ${response.status}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error(`Failed to fetch ${url}:`, error);
-    return null;
-  }
-};
-
-// ========== Reactアプリケーション ==========
-
-// CDNから読み込まれたグローバル変数を使用
-declare var React: any;
-declare var ReactDOM: any;
-declare var L: any;
-
-const { useState, useEffect } = React;
-
+// ========== メインアプリケーション ==========
 const App = () => {
-  // State management（型引数なし）
-  const [areas, setAreas] = useState([]);
-  const [schools, setSchools] = useState([]);
-  const [crimes, setCrimes] = useState([]);
-  const [safetyScores, setSafetyScores] = useState([]);
-  const [selectedArea, setSelectedArea] = useState(null);
-  const [map, setMap] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // ========== 状態管理 ==========
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [crimes, setCrimes] = useState<Crime[]>([]);
+  const [safetyScores, setSafetyScores] = useState<SafetyScore[]>([]);
+  const [selectedArea, setSelectedArea] = useState<Area | null>(null);
+  const [map, setMap] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // Layer control state
-  const [layerState, setLayerState] = useState({
+  // レイヤー制御状態
+  const [layerState, setLayerState] = useState<LayerState>({
     showSchools: true,
     showCrimes: true,
-    showSafetyScores: false
+    showSafetyScores: false,
+    showHeatmap: false
   });
 
-  // Marker groups
-  const [schoolMarkers, setSchoolMarkers] = useState(null);
-  const [crimeMarkers, setCrimeMarkers] = useState(null);
-  const [safetyCircles, setSafetyCircles] = useState(null);
+  // フィルタ状態管理
+  const [filterState, setFilterState] = useState<FilterState>({
+    searchTerm: '',
+    selectedSchoolTypes: [],
+    selectedCrimeCategories: [],
+    safetyScoreRange: [0, 100],
+    showPublicOnly: false,
+    showPrivateOnly: false
+  });
 
+  // フィルタ適用後のデータ
+  const [filteredSchools, setFilteredSchools] = useState<School[]>([]);
+  const [filteredCrimes, setFilteredCrimes] = useState<Crime[]>([]);
+  const [filteredSafetyScores, setFilteredSafetyScores] = useState<SafetyScore[]>([]);
+  const [filteredAreas, setFilteredAreas] = useState<Area[]>([]);
+  const [availableCrimeCategories, setAvailableCrimeCategories] = useState<string[]>([]);
+
+  // 統計ダッシュボード状態
+  const [showStatistics, setShowStatistics] = useState<boolean>(false);
+  const [statisticsData, setStatisticsData] = useState<StatisticsData | null>(null);
+  const [chartInstances, setChartInstances] = useState<Record<string, any>>({});
+
+  // マーカーグループ
+  const [schoolMarkers, setSchoolMarkers] = useState<any>(null);
+  const [crimeMarkers, setCrimeMarkers] = useState<any>(null);
+  const [safetyCircles, setSafetyCircles] = useState<any>(null);
+  const [heatmapLayer, setHeatmapLayer] = useState<any>(null);
+
+  // ========== Effect フック ==========
   useEffect(() => {
     initializeMap();
     loadAreas();
@@ -270,22 +85,50 @@ const App = () => {
 
   useEffect(() => {
     displayDataOnMap();
-  }, [schools, crimes, safetyScores, layerState, map]);
+  }, [filteredSchools, filteredCrimes, filteredSafetyScores, layerState, map]);
 
+  // フィルタ適用処理
+  useEffect(() => {
+    // エリアフィルタ
+    const newFilteredAreas = filterAreas(areas, filterState.searchTerm);
+    setFilteredAreas(newFilteredAreas);
+
+    // 学校フィルタ
+    const newFilteredSchools = filterSchools(schools, filterState);
+    setFilteredSchools(newFilteredSchools);
+
+    // 犯罪フィルタ
+    const newFilteredCrimes = filterCrimes(crimes, filterState);
+    setFilteredCrimes(newFilteredCrimes);
+    
+    // 犯罪種別リスト更新
+    setAvailableCrimeCategories(getAvailableCrimeCategories(crimes));
+
+    // 安全スコアフィルタ
+    const newFilteredSafetyScores = filterSafetyScores(safetyScores, filterState);
+    setFilteredSafetyScores(newFilteredSafetyScores);
+    
+    // 統計データ更新
+    const newStatistics = calculateStatistics(newFilteredSchools, newFilteredCrimes, newFilteredSafetyScores);
+    setStatisticsData(newStatistics);
+  }, [areas, schools, crimes, safetyScores, filterState]);
+
+  // ========== コア機能 ==========
+  
   /**
    * 地図を初期化
    */
   const initializeMap = (): void => {
     try {
-      const mapInstance = L.map('map').setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
+      const mapInstance = (window as any).L.map('map').setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
 
-      L.tileLayer(MAP_CONFIG.TILE_LAYER.URL, {
+      (window as any).L.tileLayer(MAP_CONFIG.TILE_LAYER.URL, {
         attribution: MAP_CONFIG.TILE_LAYER.ATTRIBUTION
       }).addTo(mapInstance);
 
       setMap(mapInstance);
     } catch (error) {
-      console.error(ERROR_MESSAGES.FAILED_TO_INITIALIZE_MAP, error);
+      console.error('Failed to initialize map:', error);
     }
   };
 
@@ -302,7 +145,7 @@ const App = () => {
       }
       setLoading(false);
     } catch (error) {
-      console.error(ERROR_MESSAGES.FAILED_TO_LOAD_AREAS, error);
+      console.error('Failed to load areas:', error);
       setLoading(false);
     }
   };
@@ -337,7 +180,7 @@ const App = () => {
 
       setLoading(false);
     } catch (error) {
-      console.error(ERROR_MESSAGES.FAILED_TO_LOAD_AREA_DATA, error);
+      console.error('Failed to load area data:', error);
       setLoading(false);
     }
   };
@@ -349,37 +192,34 @@ const App = () => {
     if (!map) return;
 
     // Clear existing markers
-    if (schoolMarkers) {
-      map.removeLayer(schoolMarkers);
-      setSchoolMarkers(null);
-    }
-    if (crimeMarkers) {
-      map.removeLayer(crimeMarkers);
-      setCrimeMarkers(null);
-    }
-    if (safetyCircles) {
-      map.removeLayer(safetyCircles);
-      setSafetyCircles(null);
-    }
+    [schoolMarkers, crimeMarkers, safetyCircles, heatmapLayer].forEach(layer => {
+      if (layer) {
+        map.removeLayer(layer);
+      }
+    });
+    setSchoolMarkers(null);
+    setCrimeMarkers(null);
+    setSafetyCircles(null);
+    setHeatmapLayer(null);
 
     // School markers
-    if (layerState.showSchools && schools.length > 0) {
-      const schoolMarkersGroup = L.layerGroup();
+    if (layerState.showSchools && filteredSchools.length > 0) {
+      const schoolMarkersGroup = (window as any).L.layerGroup();
 
-      schools.forEach((school: School) => {
+      filteredSchools.forEach((school: School) => {
         if (school.latitude && school.longitude) {
-          const safetyScore = safetyScores.find((s: SafetyScore) => s.school_id === school.id);
+          const safetyScore = filteredSafetyScores.find((s: SafetyScore) => s.school_id === school.id);
           const scoreText = safetyScore ?
             `<br/><strong>安全スコア: ${safetyScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(safetyScore.score_level)})` : '';
 
-          const icon = L.icon({
+          const icon = (window as any).L.icon({
             iconUrl: getSchoolIcon(school),
             iconSize: ICON_CONFIG.SIZES.SCHOOL,
             iconAnchor: ICON_CONFIG.SIZES.ANCHOR_SCHOOL,
             popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR
           });
 
-          const marker = L.marker([school.latitude, school.longitude], { icon })
+          const marker = (window as any).L.marker([school.latitude, school.longitude], { icon })
             .bindPopup(`
               <div>
                 <strong>${school.name}</strong><br/>
@@ -398,19 +238,19 @@ const App = () => {
     }
 
     // Crime markers
-    if (layerState.showCrimes && crimes.length > 0) {
-      const crimeMarkersGroup = L.layerGroup();
+    if (layerState.showCrimes && filteredCrimes.length > 0) {
+      const crimeMarkersGroup = (window as any).L.layerGroup();
 
-      crimes.forEach((crime: Crime) => {
+      filteredCrimes.forEach((crime: Crime) => {
         if (crime.latitude && crime.longitude) {
-          const icon = L.icon({
+          const icon = (window as any).L.icon({
             iconUrl: getCrimeIcon(crime),
             iconSize: ICON_CONFIG.SIZES.CRIME,
             iconAnchor: ICON_CONFIG.SIZES.ANCHOR_CRIME,
             popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR_CRIME
           });
 
-          const marker = L.marker([crime.latitude, crime.longitude], { icon })
+          const marker = (window as any).L.marker([crime.latitude, crime.longitude], { icon })
             .bindPopup(`
               <div>
                 <strong>${crime.category}</strong><br/>
@@ -428,13 +268,13 @@ const App = () => {
     }
 
     // Safety score circles
-    if (layerState.showSafetyScores && safetyScores.length > 0) {
-      const safetyCirclesGroup = L.layerGroup();
+    if (layerState.showSafetyScores && filteredSafetyScores.length > 0) {
+      const safetyCirclesGroup = (window as any).L.layerGroup();
 
-      safetyScores.forEach((score: SafetyScore) => {
-        const school = schools.find((s: School) => s.id === score.school_id);
+      filteredSafetyScores.forEach((score: SafetyScore) => {
+        const school = filteredSchools.find((s: School) => s.id === score.school_id);
         if (school && school.latitude && school.longitude) {
-          const circle = L.circle([school.latitude, school.longitude], {
+          const circle = (window as any).L.circle([school.latitude, school.longitude], {
             color: getSafetyScoreColor(score.score),
             fillColor: getSafetyScoreColor(score.score),
             fillOpacity: SAFETY_CONFIG.CIRCLE_STYLE.fillOpacity,
@@ -457,28 +297,50 @@ const App = () => {
       setSafetyCircles(safetyCirclesGroup);
     }
 
+    // Heatmap layer
+    if (layerState.showHeatmap && filteredCrimes.length > 0) {
+      const heatmapData = prepareHeatmapData(filteredCrimes);
+      
+      if (heatmapData.length > 0 && (window as any).L && (window as any).L.heatLayer) {
+        const heatLayer = (window as any).L.heatLayer(heatmapData, {
+          radius: HEATMAP_CONFIG.RADIUS,
+          blur: HEATMAP_CONFIG.BLUR,
+          maxZoom: HEATMAP_CONFIG.MAX_ZOOM,
+          max: HEATMAP_CONFIG.MAX_INTENSITY,
+          gradient: HEATMAP_CONFIG.GRADIENT
+        });
+        
+        heatLayer.addTo(map);
+        setHeatmapLayer(heatLayer);
+      } else {
+        console.warn('ヒートマップライブラリが読み込まれていません');
+      }
+    }
+
     // Fit map to show all data
     const allMarkers: any[] = [];
-    if (layerState.showSchools && schools.length > 0) {
-      schools.forEach((school: School) => {
+    if (layerState.showSchools && filteredSchools.length > 0) {
+      filteredSchools.forEach((school: School) => {
         if (school.latitude && school.longitude) {
-          allMarkers.push(L.marker([school.latitude, school.longitude]));
+          allMarkers.push((window as any).L.marker([school.latitude, school.longitude]));
         }
       });
     }
-    if (layerState.showCrimes && crimes.length > 0) {
-      crimes.forEach((crime: Crime) => {
+    if (layerState.showCrimes && filteredCrimes.length > 0) {
+      filteredCrimes.forEach((crime: Crime) => {
         if (crime.latitude && crime.longitude) {
-          allMarkers.push(L.marker([crime.latitude, crime.longitude]));
+          allMarkers.push((window as any).L.marker([crime.latitude, crime.longitude]));
         }
       });
     }
 
     if (allMarkers.length > 0) {
-      const group = L.featureGroup(allMarkers);
+      const group = (window as any).L.featureGroup(allMarkers);
       map.fitBounds(group.getBounds().pad(MAP_CONFIG.FIT_BOUNDS_PADDING));
     }
   };
+
+  // ========== イベントハンドラ ==========
 
   /**
    * エリアクリックハンドラ
@@ -498,6 +360,73 @@ const App = () => {
     }));
   };
 
+  // フィルタハンドラ関数
+  const handleSearchChange = (searchTerm: string) => {
+    setFilterState(prev => ({ ...prev, searchTerm }));
+  };
+
+  const handleSchoolTypeToggle = (type: School['type']) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedSchoolTypes: prev.selectedSchoolTypes.includes(type)
+        ? prev.selectedSchoolTypes.filter(t => t !== type)
+        : [...prev.selectedSchoolTypes, type]
+    }));
+  };
+
+  const handleCrimeCategoryToggle = (category: string) => {
+    setFilterState(prev => ({
+      ...prev,
+      selectedCrimeCategories: prev.selectedCrimeCategories.includes(category)
+        ? prev.selectedCrimeCategories.filter(c => c !== category)
+        : [...prev.selectedCrimeCategories, category]
+    }));
+  };
+
+  const handleSafetyScoreRangeChange = (range: [number, number]) => {
+    setFilterState(prev => ({ ...prev, safetyScoreRange: range }));
+  };
+
+  const handlePublicPrivateToggle = (type: 'public' | 'private') => {
+    setFilterState(prev => ({
+      ...prev,
+      showPublicOnly: type === 'public' ? !prev.showPublicOnly : prev.showPublicOnly,
+      showPrivateOnly: type === 'private' ? !prev.showPrivateOnly : prev.showPrivateOnly
+    }));
+  };
+
+  const handleClearFilters = () => {
+    setFilterState({
+      searchTerm: '',
+      selectedSchoolTypes: [],
+      selectedCrimeCategories: [],
+      safetyScoreRange: [0, 100],
+      showPublicOnly: false,
+      showPrivateOnly: false
+    });
+  };
+
+  // 統計機能ハンドラ
+  const handleToggleStatistics = () => {
+    setShowStatistics(prev => !prev);
+  };
+
+  const handleExportCSV = () => {
+    const csvContent = generateCSVData(filteredSchools, filteredCrimes, filteredSafetyScores);
+    downloadCSV(csvContent);
+  };
+
+  const handleExportPDF = () => {
+    if (statisticsData) {
+      generatePDFReport(statisticsData, selectedArea?.name || '');
+    }
+  };
+
+  const handleCreateChart = (canvasId: string, type: string, data: any, options: any) => {
+    createOrUpdateChart(canvasId, type, data, options, chartInstances, setChartInstances);
+  };
+
+  // ========== レンダリング ==========
   return React.createElement('div', { className: 'app' },
     React.createElement('div', { className: 'sidebar' },
       React.createElement('h1', null, LABELS.UI.APP_TITLE),
@@ -514,7 +443,7 @@ const App = () => {
             checked: layerState.showSchools,
             onChange: () => handleLayerToggle('showSchools')
           }),
-          ` ${LABELS.UI.SCHOOL_LAYER} (${schools.length}件)`
+          ` ${LABELS.UI.SCHOOL_LAYER} (${filteredSchools.length}件)`
         ),
         React.createElement('label', { className: 'checkbox-label' },
           React.createElement('input', {
@@ -522,7 +451,7 @@ const App = () => {
             checked: layerState.showCrimes,
             onChange: () => handleLayerToggle('showCrimes')
           }),
-          ` ${LABELS.UI.CRIME_LAYER} (${crimes.length}件)`
+          ` ${LABELS.UI.CRIME_LAYER} (${filteredCrimes.length}件)`
         ),
         React.createElement('label', { className: 'checkbox-label' },
           React.createElement('input', {
@@ -531,13 +460,217 @@ const App = () => {
             onChange: () => handleLayerToggle('showSafetyScores')
           }),
           ` ${LABELS.UI.SAFETY_RANGE_LAYER}`
+        ),
+        React.createElement('label', { className: 'checkbox-label heatmap-label' },
+          React.createElement('input', {
+            type: 'checkbox',
+            checked: layerState.showHeatmap,
+            onChange: () => handleLayerToggle('showHeatmap')
+          }),
+          ` ${LABELS.UI.HEATMAP_LAYER} (🌡️ 犯罪密度)`
+        )
+      ),
+
+      // Search and Filter controls
+      React.createElement('div', { className: 'search-filters' },
+        React.createElement('h3', null, LABELS.UI.SEARCH_FILTERS),
+        
+        // Search box
+        React.createElement('div', { className: 'search-box' },
+          React.createElement('input', {
+            type: 'text',
+            placeholder: LABELS.UI.SEARCH_PLACEHOLDER,
+            value: filterState.searchTerm,
+            onChange: (e: any) => handleSearchChange(e.target.value),
+            className: 'search-input'
+          })
+        ),
+        
+        // School type filter
+        React.createElement('div', { className: 'filter-group' },
+          React.createElement('label', { className: 'filter-group-label' }, LABELS.UI.SCHOOL_TYPE_FILTER),
+          React.createElement('div', { className: 'filter-checkboxes' },
+            (['elementary', 'junior_high', 'high'] as School['type'][]).map(type =>
+              React.createElement('label', {
+                key: type,
+                className: 'checkbox-label small'
+              },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: filterState.selectedSchoolTypes.includes(type),
+                  onChange: () => handleSchoolTypeToggle(type)
+                }),
+                ` ${getSchoolTypeLabel(type)}`
+              )
+            )
+          )
+        ),
+        
+        // Crime type filter
+        availableCrimeCategories.length > 0 && React.createElement('div', { className: 'filter-group' },
+          React.createElement('label', { className: 'filter-group-label' }, LABELS.UI.CRIME_TYPE_FILTER),
+          React.createElement('div', { className: 'filter-checkboxes' },
+            availableCrimeCategories.map(category =>
+              React.createElement('label', {
+                key: category,
+                className: 'checkbox-label small'
+              },
+                React.createElement('input', {
+                  type: 'checkbox',
+                  checked: filterState.selectedCrimeCategories.includes(category),
+                  onChange: () => handleCrimeCategoryToggle(category)
+                }),
+                ` ${category}`
+              )
+            )
+          )
+        ),
+        
+        // Public/Private filter
+        React.createElement('div', { className: 'filter-group' },
+          React.createElement('label', { className: 'filter-group-label' }, LABELS.UI.PUBLIC_PRIVATE_FILTER),
+          React.createElement('div', { className: 'filter-checkboxes' },
+            React.createElement('label', { className: 'checkbox-label small' },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: filterState.showPublicOnly,
+                onChange: () => handlePublicPrivateToggle('public')
+              }),
+              ` 公立のみ`
+            ),
+            React.createElement('label', { className: 'checkbox-label small' },
+              React.createElement('input', {
+                type: 'checkbox',
+                checked: filterState.showPrivateOnly,
+                onChange: () => handlePublicPrivateToggle('private')
+              }),
+              ` 私立のみ`
+            )
+          )
+        ),
+        
+        // Safety score range slider
+        React.createElement('div', { className: 'filter-group' },
+          React.createElement('label', { className: 'filter-group-label' }, 
+            `${LABELS.UI.SAFETY_SCORE_FILTER}: ${filterState.safetyScoreRange[0]} - ${filterState.safetyScoreRange[1]}`
+          ),
+          React.createElement('div', { className: 'range-sliders' },
+            React.createElement('input', {
+              type: 'range',
+              min: 0,
+              max: 100,
+              value: filterState.safetyScoreRange[0],
+              onChange: (e: any) => handleSafetyScoreRangeChange([
+                parseInt(e.target.value), 
+                filterState.safetyScoreRange[1]
+              ]),
+              className: 'range-slider'
+            }),
+            React.createElement('input', {
+              type: 'range',
+              min: 0,
+              max: 100,
+              value: filterState.safetyScoreRange[1],
+              onChange: (e: any) => handleSafetyScoreRangeChange([
+                filterState.safetyScoreRange[0],
+                parseInt(e.target.value)
+              ]),
+              className: 'range-slider'
+            })
+          )
+        ),
+        
+        // Clear filters button
+        React.createElement('button', {
+          onClick: handleClearFilters,
+          className: 'clear-filters-btn'
+        }, LABELS.UI.CLEAR_FILTERS),
+        
+        // Results count display
+        React.createElement('div', { className: 'filter-results' },
+          `${LABELS.UI.FILTERED_RESULTS}: 学校${filteredSchools.length}件 | 犯罪${filteredCrimes.length}件`
+        ),
+        
+        // Statistics toggle button
+        React.createElement('button', {
+          onClick: handleToggleStatistics,
+          className: 'toggle-statistics-btn'
+        }, showStatistics ? LABELS.UI.HIDE_STATISTICS : LABELS.UI.SHOW_STATISTICS)
+      ),
+
+      // Statistics Dashboard
+      showStatistics && statisticsData && React.createElement('div', { className: 'statistics-dashboard' },
+        React.createElement('h3', null, LABELS.UI.STATISTICS_DASHBOARD),
+        
+        // Export buttons
+        React.createElement('div', { className: 'export-buttons' },
+          React.createElement('button', {
+            onClick: handleExportCSV,
+            className: 'export-btn csv-btn'
+          }, LABELS.UI.EXPORT_CSV),
+          React.createElement('button', {
+            onClick: handleExportPDF,
+            className: 'export-btn pdf-btn'
+          }, LABELS.UI.EXPORT_PDF)
+        ),
+        
+        // Crime statistics chart
+        Object.keys(statisticsData.crimeByCategory).length > 0 && React.createElement('div', { className: 'chart-container' },
+          React.createElement('h4', null, LABELS.UI.CRIME_BY_CATEGORY),
+          React.createElement('canvas', { 
+            id: 'crimeChart', 
+            className: 'chart-canvas',
+            ref: (canvas) => {
+              if (canvas && statisticsData) {
+                setTimeout(() => {
+                  const config = getCrimeChartConfig(statisticsData.crimeByCategory);
+                  handleCreateChart('crimeChart', config.type, config.data, config.options);
+                }, 100);
+              }
+            }
+          })
+        ),
+        
+        // Safety score distribution chart
+        Object.keys(statisticsData.safetyScoreDistribution).length > 0 && React.createElement('div', { className: 'chart-container' },
+          React.createElement('h4', null, LABELS.UI.SAFETY_SCORE_DISTRIBUTION),
+          React.createElement('canvas', { 
+            id: 'safetyChart',
+            className: 'chart-canvas',
+            ref: (canvas) => {
+              if (canvas && statisticsData) {
+                setTimeout(() => {
+                  const config = getSafetyChartConfig(statisticsData.safetyScoreDistribution);
+                  handleCreateChart('safetyChart', config.type, config.data, config.options);
+                }, 200);
+              }
+            }
+          })
+        ),
+        
+        // School type chart
+        Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k] > 0) && 
+        React.createElement('div', { className: 'chart-container' },
+          React.createElement('h4', null, LABELS.UI.SCHOOL_TYPE_STATS),
+          React.createElement('canvas', { 
+            id: 'schoolTypeChart',
+            className: 'chart-canvas',
+            ref: (canvas) => {
+              if (canvas && statisticsData) {
+                setTimeout(() => {
+                  const config = getSchoolTypeChartConfig(statisticsData.schoolTypeDistribution, getSchoolTypeLabel);
+                  handleCreateChart('schoolTypeChart', config.type, config.data, config.options);
+                }, 300);
+              }
+            }
+          })
         )
       ),
 
       // Area selection
       React.createElement('div', { className: 'areas-list' },
         React.createElement('h3', null, LABELS.UI.AREA_SELECTION),
-        areas.map((area: Area) =>
+        filteredAreas.map((area: Area) =>
           React.createElement('div', {
             key: area.id,
             className: `area-item ${selectedArea?.id === area.id ? 'selected' : ''}`,
@@ -553,13 +686,13 @@ const App = () => {
       // Selected area info
       selectedArea && React.createElement('div', { className: 'selected-area' },
         React.createElement('h3', null, `${LABELS.UI.SELECTED_PREFIX}${selectedArea.name}`),
-        React.createElement('p', null, `学校: ${schools.length}件 | 犯罪: ${crimes.length}件`)
+        React.createElement('p', null, `学校: ${filteredSchools.length}件 | 犯罪: ${filteredCrimes.length}件`)
       ),
 
       // Schools list
-      layerState.showSchools && schools.length > 0 && React.createElement('div', { className: 'schools-list' },
+      layerState.showSchools && filteredSchools.length > 0 && React.createElement('div', { className: 'schools-list' },
         React.createElement('h3', null, LABELS.UI.SCHOOL_LIST),
-        schools.map((school: School) =>
+        filteredSchools.map((school: School) =>
           React.createElement('div', {
             key: school.id,
             className: 'school-item'
@@ -572,9 +705,9 @@ const App = () => {
       ),
 
       // Safety scores list
-      layerState.showSafetyScores && safetyScores.length > 0 && React.createElement('div', { className: 'safety-scores' },
+      layerState.showSafetyScores && filteredSafetyScores.length > 0 && React.createElement('div', { className: 'safety-scores' },
         React.createElement('h3', null, LABELS.UI.SAFETY_SCORES),
-        safetyScores.map((score: SafetyScore) =>
+        filteredSafetyScores.map((score: SafetyScore) =>
           React.createElement('div', {
             key: score.school_id,
             className: 'safety-score-item',
@@ -632,6 +765,177 @@ const App = () => {
       }
       .checkbox-label input {
         margin-right: 8px;
+      }
+      .heatmap-label {
+        background: linear-gradient(90deg, #0066ff, #00ffff, #00ff00, #ffff00, #ff9900, #ff0000);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-weight: bold;
+        border: 1px solid #ff6b6b;
+        border-radius: 4px;
+        padding: 4px 8px;
+        margin: 4px 0;
+      }
+      .search-filters {
+        background: white;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 15px 0;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      }
+      .search-box {
+        margin-bottom: 15px;
+      }
+      .search-input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+      .search-input:focus {
+        outline: none;
+        border-color: #1890ff;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+      }
+      .filter-group {
+        margin-bottom: 15px;
+      }
+      .filter-group-label {
+        display: block;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 5px;
+        font-size: 12px;
+      }
+      .filter-checkboxes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+      .checkbox-label.small {
+        font-size: 11px;
+        margin: 2px 0;
+        background: #f8f9fa;
+        padding: 4px 8px;
+        border-radius: 3px;
+        border: 1px solid #e9ecef;
+        transition: background-color 0.2s;
+      }
+      .checkbox-label.small:hover {
+        background: #e7f3ff;
+      }
+      .checkbox-label.small input:checked + * {
+        font-weight: bold;
+      }
+      .range-sliders {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .range-slider {
+        width: 100%;
+        margin: 2px 0;
+        accent-color: #1890ff;
+      }
+      .clear-filters-btn {
+        width: 100%;
+        padding: 8px 16px;
+        background: #ff6b6b;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        transition: background-color 0.2s;
+        margin-bottom: 10px;
+      }
+      .clear-filters-btn:hover {
+        background: #ff5252;
+      }
+      .filter-results {
+        background: #e7f3ff;
+        padding: 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: #1890ff;
+        font-weight: bold;
+        text-align: center;
+      }
+      .toggle-statistics-btn {
+        width: 100%;
+        padding: 10px 16px;
+        background: #1890ff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: bold;
+        transition: background-color 0.2s;
+        margin-top: 10px;
+      }
+      .toggle-statistics-btn:hover {
+        background: #0f7ae5;
+      }
+      .statistics-dashboard {
+        background: white;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 15px 0;
+        border: 1px solid #dee2e6;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      }
+      .export-buttons {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 15px;
+      }
+      .export-btn {
+        flex: 1;
+        padding: 8px 12px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: bold;
+        transition: all 0.2s;
+      }
+      .csv-btn {
+        background: #2ecc71;
+        color: white;
+      }
+      .csv-btn:hover {
+        background: #27ae60;
+      }
+      .pdf-btn {
+        background: #e74c3c;
+        color: white;
+      }
+      .pdf-btn:hover {
+        background: #c0392b;
+      }
+      .chart-container {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+      }
+      .chart-container h4 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 14px;
+        text-align: center;
+      }
+      .chart-canvas {
+        max-height: 300px;
+        width: 100% !important;
+        height: 250px !important;
       }
       .area-item {
         padding: 12px;
@@ -710,9 +1014,9 @@ const App = () => {
   );
 };
 
-// Initialize the app
+// ========== アプリケーション初期化 ==========
 const container = document.getElementById('root');
 if (container) {
-  const root = ReactDOM.createRoot(container);
+  const root = (window as any).ReactDOM.createRoot(container);
   root.render(React.createElement(App));
 }
