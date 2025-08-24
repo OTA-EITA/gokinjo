@@ -1,5 +1,7 @@
-import { School, Crime, SafetyScore } from '../types';
-import { ICON_CONFIG, SAFETY_CONFIG, LABELS } from '../constants/constants';
+import { School, Crime, SafetyScore } from '@/types';
+import { ICON_CONFIG, SAFETY_CONFIG, LABELS, ERROR_MESSAGES } from '@/constants';
+
+// ========== 共通ユーティリティ関数 ==========
 
 /**
  * 学校タイプに応じたアイコンURLを取得
@@ -13,8 +15,7 @@ export const getSchoolIcon = (school: School): string => {
  * 犯罪タイプに応じたアイコンURLを取得
  */
 export const getCrimeIcon = (crime: Crime): string => {
-  const color = ICON_CONFIG.CRIME_COLORS[crime.category as keyof typeof ICON_CONFIG.CRIME_COLORS] || 
-                ICON_CONFIG.CRIME_COLORS.default;
+  const color = ICON_CONFIG.CRIME_COLORS[crime.category] || ICON_CONFIG.CRIME_COLORS.default;
   return `${ICON_CONFIG.BASE_URL}/marker-icon-2x-${color}.png`;
 };
 
@@ -63,15 +64,49 @@ export const buildApiUrl = (endpoint: string, params: Record<string, string> = {
 /**
  * 安全なfetch処理
  */
-export const safeFetch = async <T>(url: string): Promise<T | null> => {
+export const safeFetch = async (url: string): Promise<any> => {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      throw new Error(`${ERROR_MESSAGES.HTTP_ERROR} ${response.status}`);
     }
     return await response.json();
   } catch (error) {
     console.error(`Failed to fetch ${url}:`, error);
     return null;
   }
+};
+
+/**
+ * 犯罪種別に基づく重み値を取得
+ */
+export const getCrimeWeight = (crime: Crime): number => {
+  const weights: Record<string, number> = {
+    '暴行': 1.0,      // 最高重み
+    '詐欺': 0.8,
+    '窃盗': 0.6,      // 中程度重み
+    'default': 0.5    // デフォルト重み
+  };
+  return weights[crime.category] || weights.default;
+};
+
+/**
+ * ヒートマップ用データ点を準備
+ */
+export const prepareHeatmapData = (crimes: Crime[]): [number, number, number][] => {
+  return crimes
+    .filter(crime => crime.latitude && crime.longitude)
+    .map(crime => [
+      crime.latitude,
+      crime.longitude,
+      getCrimeWeight(crime)
+    ] as [number, number, number]);
+};
+
+/**
+ * 利用可能な犯罪種別を取得
+ */
+export const getAvailableCrimeCategories = (crimes: Crime[]): string[] => {
+  const categories = new Set(crimes.map(crime => crime.category));
+  return Array.from(categories).sort();
 };

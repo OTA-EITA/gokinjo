@@ -15,6 +15,18 @@
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
+    <!-- 🔥 Leaflet Heatmap Plugin -->
+    <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+    
+    <!-- 📊 NEW: Chart.js for Statistics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    
+    <!-- 📄 NEW: jsPDF for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- 📊 NEW: Papa Parse for CSV Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
     <style>
         body {
             margin: 0;
@@ -74,10 +86,11 @@
 
     <script>
         // Check if required dependencies are loaded
-        if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof L === 'undefined') {
+        if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof L === 'undefined' || typeof L.heatLayer === 'undefined' || typeof Chart === 'undefined') {
             document.getElementById('root').innerHTML = `
                 <div class="error-screen">
                     必要なライブラリの読み込みに失敗しました。<br/>
+                    (React, ReactDOM, Leaflet, Leaflet.heat, Chart.js)<br/>
                     インターネット接続を確認してページをリロードしてください。
                 </div>
             `;
@@ -85,6 +98,7 @@
             // Try to load the compiled TypeScript app
             const script = document.createElement('script');
             script.src = './dist/app.js';
+            script.type = 'module';  // ES Modulesとして読み込み
             script.onerror = function() {
                 console.error('Failed to load compiled app.js');
                 document.getElementById('root').innerHTML = `

@@ -1,52 +1,32 @@
 {
   "name": "neighborhood-mapping-frontend",
-  "version": "1.1.0",
-  "description": "近隣情報マッピングアプリのフロントエンド (TypeScript版)",
-  "main": "dist/app.js",
+  "private": true,
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 3001 --directory public",
-    "type-check": "tsc --noEmit",
-    "build": "tsc",
-    "build:watch": "tsc --watch",
-    "clean": "rm -rf dist",
-    "start": "../start_frontend.sh",
-    "prebuild": "npm run clean",
-    "postbuild": "echo 'TypeScript compiled successfully. Files available in dist/'",
-    "serve": "npm run build && npm run dev"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "leaflet": "^1.9.4",
+    "chart.js": "^4.4.0"
+  },
   "devDependencies": {
-    "@types/leaflet": "^1.9.0",
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^18.0.0",
-    "typescript": "^5.2.2"
-  },
-  "keywords": [
-    "mapping",
-    "crime-data",
-    "schools",
-    "tokyo",
-    "typescript",
-    "react",
-    "leaflet"
-  ],
-  "author": "Neighborhood Mapping Team",
-  "license": "MIT",
-  "engines": {
-    "node": ">=16.0.0"
-  },
-  "browserslist": [
-    ">0.2%",
-    "not dead",
-    "not op_mini all"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "."
-  },
-  "bugs": {
-    "url": "https://github.com/neighborhood-mapping/issues"
-  },
-  "homepage": "http://localhost:3001"
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@types/leaflet": "^1.9.8",
+    "@typescript-eslint/eslint-plugin": "^7.2.0",
+    "@typescript-eslint/parser": "^7.2.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.6",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0"
+  }
 }
