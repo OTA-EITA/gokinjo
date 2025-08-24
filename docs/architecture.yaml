@@ -1,0 +1,122 @@
+project:
+  name: neighborhood-mapping-poc
+  description: >
+    東京23区の町丁目単位で「学校 × 治安」データを統合・可視化するPoC基盤。
+    最終的にはEKS上で運用し、全国展開・拡張を見据えた構成とする。
+
+scope:
+  target_region: tokyo-23-wards
+  data_layers:
+    - crime
+    - school
+  granularity: town-chome
+
+architecture:
+  orchestration:
+    tool: airflow
+    executor: kubernetes
+    helm_chart: apache-airflow/airflow
+    dag:
+      name: tokyo_crime_etl
+      schedule: daily
+      structure:
+        - download_raw_files  # 共通
+        - transform_setagaya  # 区ごと
+        - transform_shinjuku
+        - transform_edogawa
+        - ...
+        - normalize_to_parquet
+        - load_postgis        # 共通
+
+  etl:
+    format: parquet
+    staging: s3
+    process_flow:
+      - raw: s3://tokyo-crime-school/raw
+      - processed: s3://tokyo-crime-school/processed
+      - curated: s3://tokyo-crime-school/curated
+    transformation:
+      - excel -> parquet
+      - csv -> parquet
+      - geojson -> parquet
+    normalization:
+      schema: postgis_common
+
+  database:
+    engine: postgresql
+    extension: postgis
+    schemas:
+      areas:
+        columns:
+          - id: serial
+          - ward_code: text
+          - town_code: text
+          - name: text
+          - geom: polygon(4326)
+      schools:
+        columns:
+          - id: serial
+          - name: text
+          - type: enum [elementary, junior_high, high]
+          - public_private: enum [public, private]
+          - location: point(4326)
+          - area_id: fk -> areas.id
+      crimes:
+        columns:
+          - id: serial
+          - category: text
+          - date: date
+          - location: point(4326)
+          - area_id: fk -> areas.id
+
+  api:
+    protocol: grpc
+    services:
+      CrimeSchoolService:
+        methods:
+          - getSchoolsByArea(ward_code, town_code) -> SchoolList
+          - getCrimesByArea(ward_code, town_code) -> CrimeList
+          - getSafetyScore(school_id) -> SafetyScore
+
+  frontend:
+    framework: react + leaflet
+    features:
+      - toggle_layers: [crime, school]
+      - search_filter: [school_type, safety_score]
+
+development:
+  local:
+    orchestration: docker-compose
+    components:
+      - postgis
+      - airflow (LocalExecutor)
+      - minio (S3互換)
+      - grpc_server
+      - frontend
+    volumes:
+      - ./data/raw -> minio/raw
+      - ./data/processed -> minio/processed
+      - ./data/curated -> minio/curated
+
+deployment:
+  step1_local:
+    platform: docker-compose
+    goal: fast prototyping
+  step2_cloud_poc:
+    platform: aws ecs fargate + rds(postgis) + s3
+    goal: demo with realistic infra
+  step3_production:
+    platform: aws eks
+    components:
+      - airflow on kubernetesexecutor
+      - rds(postgis)
+      - s3 (data lake)
+      - grpc services (deployment + hpa)
+      - frontend (deployment + ingress)
+    goal: scalable nationwide-ready infra
+
+future_extension:
+  - spark + sedona: nationwide batch etl
+  - flink or spark streaming: realtime user data
+  - new_data_layers: [real_estate, population, user_generated]
+  - service_mesh: istio/linkerd for grpc
