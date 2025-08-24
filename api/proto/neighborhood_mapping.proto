@@ -1,0 +1,147 @@
+syntax = "proto3";
+
+package neighborhood_mapping.v1;
+
+option go_package = "gokinjo-api/proto";
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+// gRPC service definition with gRPC-Gateway annotations
+service CrimeSchoolService {
+  // エリア内の学校を取得
+  rpc GetSchoolsByArea(AreaRequest) returns (SchoolList) {
+    option (google.api.http) = {
+      get: "/v1/areas/{ward_code}/{town_code}/schools"
+    };
+  }
+  
+  // エリア内の犯罪データを取得
+  rpc GetCrimesByArea(AreaRequest) returns (CrimeList) {
+    option (google.api.http) = {
+      get: "/v1/areas/{ward_code}/{town_code}/crimes"
+    };
+  }
+  
+  // 学校の安全性スコアを取得
+  rpc GetSafetyScore(SafetyScoreRequest) returns (SafetyScore) {
+    option (google.api.http) = {
+      get: "/v1/schools/{school_id}/safety"
+    };
+  }
+  
+  // エリア一覧を取得
+  rpc GetAreas(AreasRequest) returns (AreaList) {
+    option (google.api.http) = {
+      get: "/v1/areas"
+    };
+  }
+
+  // Health check endpoint
+  rpc Health(google.protobuf.Empty) returns (HealthResponse) {
+    option (google.api.http) = {
+      get: "/health"
+    };
+  }
+}
+
+// リクエスト/レスポンス メッセージ定義
+
+message AreaRequest {
+  string ward_code = 1;
+  string town_code = 2;
+}
+
+message SafetyScoreRequest {
+  int32 school_id = 1;
+  int32 radius_meters = 2; // 半径（メートル）
+}
+
+message AreasRequest {
+  string ward_code = 1; // オプション：特定区のみ
+}
+
+// 地理的位置
+message Location {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+// 学校データ
+message School {
+  int32 id = 1;
+  string name = 2;
+  SchoolType type = 3;
+  SchoolOwnership public_private = 4;
+  Location location = 5;
+  int32 area_id = 6;
+  string address = 7;
+}
+
+message SchoolList {
+  repeated School schools = 1;
+  int32 total_count = 2;
+}
+
+// 犯罪データ
+message Crime {
+  int32 id = 1;
+  string category = 2;
+  string date = 3; // YYYY-MM-DD format
+  Location location = 4;
+  int32 area_id = 5;
+  string description = 6;
+}
+
+message CrimeList {
+  repeated Crime crimes = 1;
+  int32 total_count = 2;
+}
+
+// エリア（町丁目）
+message Area {
+  int32 id = 1;
+  string ward_code = 2;
+  string town_code = 3;
+  string name = 4;
+  // polygon geometry は簡略化のため省略
+}
+
+message AreaList {
+  repeated Area areas = 1;
+  int32 total_count = 2;
+}
+
+// 安全性スコア
+message SafetyScore {
+  int32 school_id = 1;
+  double score = 2; // 0.0-100.0 (100が最も安全)
+  int32 crime_count = 3; // 周辺犯罪件数
+  repeated CrimeCategory crime_breakdown = 4;
+}
+
+message CrimeCategory {
+  string category = 1;
+  int32 count = 2;
+}
+
+// Health check response
+message HealthResponse {
+  string status = 1;
+  string timestamp = 2;
+  string version = 3;
+}
+
+// ENUM定義
+enum SchoolType {
+  SCHOOL_TYPE_UNSPECIFIED = 0;
+  ELEMENTARY = 1;
+  JUNIOR_HIGH = 2;
+  HIGH = 3;
+}
+
+enum SchoolOwnership {
+  OWNERSHIP_UNSPECIFIED = 0;
+  PUBLIC = 1;
+  PRIVATE = 2;
+}
