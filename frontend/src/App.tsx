@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData
 } from './types';
@@ -67,6 +67,12 @@ const App: React.FC = () => {
   const [showStatistics, setShowStatistics] = useState<boolean>(false);
   const [statisticsData, setStatisticsData] = useState<StatisticsData | null>(null);
   const [chartInstances, setChartInstances] = useState<Record<string, any>>({});
+  const [chartsInitialized, setChartsInitialized] = useState<boolean>(false);
+
+  // Chart.js 初期化用 refs
+  const crimeChartRef = useRef<HTMLCanvasElement>(null);
+  const safetyChartRef = useRef<HTMLCanvasElement>(null);
+  const schoolTypeChartRef = useRef<HTMLCanvasElement>(null);
 
   // マーカーグループ
   const [schoolMarkers, setSchoolMarkers] = useState<any | null>(null);
@@ -119,10 +125,91 @@ const App: React.FC = () => {
     // 統計データ更新
     const newStatistics = calculateStatistics(newFilteredSchools, newFilteredCrimes, newFilteredSafetyScores);
     setStatisticsData(newStatistics);
+    
+    // 統計が表示されている場合はチャートを再描画
+    if (showStatistics) {
+      setChartsInitialized(false);
+    }
   }, [areas, schools, crimes, safetyScores, filterState]);
+
+  // Chart.js 安全初期化 - 統計データが更新されるたびに再初期化
+  useEffect(() => {
+    if (!showStatistics || !statisticsData) {
+      setChartsInitialized(false);
+      return;
+    }
+
+    // Chart.jsが読み込まれているか確認
+    if (!(window as any).Chart) {
+      console.warn('Chart.jsが読み込まれていません');
+      return;
+    }
+
+    // 既存チャートを破棄
+    Object.values(chartInstances).forEach(chart => {
+      if (chart && typeof chart.destroy === 'function') {
+        try {
+          chart.destroy();
+        } catch (e) {
+          console.warn('チャート破棄エラー:', e);
+        }
+      }
+    });
+    setChartInstances({});
+    setChartsInitialized(false);
+    
+    // 少し遅延してチャートを初期化
+    const timer = setTimeout(() => {
+      try {
+        initializeCharts();
+        setChartsInitialized(true);
+      } catch (error) {
+        console.error('Chart initialization failed:', error);
+        setChartsInitialized(false);
+      }
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [showStatistics, statisticsData]); // 依存配列をシンプルに
 
   // ========== コア機能 ==========
   
+  /**
+   * Chart.jsを安全に初期化
+   */
+  const initializeCharts = (): void => {
+    if (!statisticsData) {
+      console.log('No statistics data available for chart initialization');
+      return;
+    }
+
+    try {
+      // 犯罪統計チャート
+      if (Object.keys(statisticsData.crimeByCategory).length > 0 && crimeChartRef.current) {
+        const config = getCrimeChartConfig(statisticsData.crimeByCategory);
+        createOrUpdateChart('crimeChart', config.type, config.data, config.options, chartInstances, setChartInstances);
+      }
+
+      // 安全スコアチャート
+      if (Object.keys(statisticsData.safetyScoreDistribution).length > 0 && safetyChartRef.current) {
+        const config = getSafetyChartConfig(statisticsData.safetyScoreDistribution);
+        createOrUpdateChart('safetyChart', config.type, config.data, config.options, chartInstances, setChartInstances);
+      }
+
+      // 学校種別チャート
+      if (Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k] > 0) && schoolTypeChartRef.current) {
+        const config = getSchoolTypeChartConfig(statisticsData.schoolTypeDistribution, getSchoolTypeLabel);
+        createOrUpdateChart('schoolTypeChart', config.type, config.data, config.options, chartInstances, setChartInstances);
+      }
+      
+      console.log('✅ Charts initialized successfully');
+    } catch (error) {
+      console.error('チャート初期化エラー:', error);
+    }
+  };
+
   /**
    * 地図を初期化
    */
@@ -138,6 +225,12 @@ const App: React.FC = () => {
       // コンテナに既存のマップがあるかチェック
       if ((mapContainer as any)._leaflet_id) {
         console.log('Map already initialized, skipping...');
+        return;
+      }
+
+      // Leafletが存在するか確認
+      if (typeof L === 'undefined') {
+        console.error('Leaflet is not loaded');
         return;
       }
 
@@ -201,6 +294,12 @@ const App: React.FC = () => {
       }
 
       setLoading(false);
+      
+      // データ読み込み完了後、統計ダッシュボードが表示されていることを再確認
+      if (!showStatistics) {
+        setShowStatistics(true);
+      }
+      
     } catch (error) {
       console.error('Failed to load area data:', error);
       setLoading(false);
@@ -403,6 +502,14 @@ const App: React.FC = () => {
    */
   const handleAreaClick = (area: Area): void => {
     setSelectedArea(area);
+    
+    // 統計ダッシュボードを自動表示（データ読み込み前に表示開始）
+    setShowStatistics(true);
+    
+    // チャートの再初期化フラグをリセット
+    setChartsInitialized(false);
+    
+    // データ読み込み開始
     loadAreaData(area.ward_code, area.town_code);
   };
 
@@ -810,15 +917,25 @@ const App: React.FC = () => {
           {/* Statistics toggle button */}
           <button onClick={handleToggleStatistics} className="toggle-statistics-btn" style={{marginTop: '10px', width: '100%'}}>
             {showStatistics ? LABELS.UI.HIDE_STATISTICS : LABELS.UI.SHOW_STATISTICS}
+            {selectedArea && showStatistics && (
+              <span className="auto-display-indicator" style={{fontSize: '10px', marginLeft: '6px', opacity: 0.7}}>(自動表示)</span>
+            )}
           </button>
         </div>
 
         {/* Statistics Dashboard */}
         {showStatistics && statisticsData && (
           <div className="statistics-dashboard">
-            <h3 style={{marginTop: 0, marginBottom: '12px', color: '#333', fontSize: '16px'}}>
-              {LABELS.UI.STATISTICS_DASHBOARD}
-            </h3>
+            <div className="statistics-header">
+              <h3 style={{marginTop: 0, marginBottom: '12px', color: '#333', fontSize: '16px'}}>
+                {LABELS.UI.STATISTICS_DASHBOARD}
+                {selectedArea && (
+                  <span style={{fontSize: '12px', fontWeight: 'normal', color: '#666', marginLeft: '8px'}}>
+                    - {selectedArea.name}
+                  </span>
+                )}
+              </h3>
+            </div>
             
             {/* Export buttons */}
             <div className="export-buttons">
@@ -838,15 +955,8 @@ const App: React.FC = () => {
                 </h4>
                 <canvas 
                   id="crimeChart" 
+                  ref={crimeChartRef}
                   className="chart-canvas"
-                  ref={(canvas) => {
-                    if (canvas && statisticsData) {
-                      setTimeout(() => {
-                        const config = getCrimeChartConfig(statisticsData.crimeByCategory);
-                        handleCreateChart('crimeChart', config.type, config.data, config.options);
-                      }, 100);
-                    }
-                  }}
                 />
               </div>
             )}
@@ -859,15 +969,8 @@ const App: React.FC = () => {
                 </h4>
                 <canvas 
                   id="safetyChart"
+                  ref={safetyChartRef}
                   className="chart-canvas"
-                  ref={(canvas) => {
-                    if (canvas && statisticsData) {
-                      setTimeout(() => {
-                        const config = getSafetyChartConfig(statisticsData.safetyScoreDistribution);
-                        handleCreateChart('safetyChart', config.type, config.data, config.options);
-                      }, 200);
-                    }
-                  }}
                 />
               </div>
             )}
@@ -880,15 +983,8 @@ const App: React.FC = () => {
                 </h4>
                 <canvas 
                   id="schoolTypeChart"
+                  ref={schoolTypeChartRef}
                   className="chart-canvas"
-                  ref={(canvas) => {
-                    if (canvas && statisticsData) {
-                      setTimeout(() => {
-                        const config = getSchoolTypeChartConfig(statisticsData.schoolTypeDistribution, getSchoolTypeLabel);
-                        handleCreateChart('schoolTypeChart', config.type, config.data, config.options);
-                      }, 300);
-                    }
-                  }}
                 />
               </div>
             )}
@@ -1135,6 +1231,25 @@ const App: React.FC = () => {
           background: #e7f3ff;
           border-radius: 6px;
           border: 1px solid #1890ff;
+        }
+        .statistics-header {
+          border-bottom: 1px solid #e7f3ff;
+          padding-bottom: 8px;
+          margin-bottom: 12px;
+        }
+        .statistics-dashboard {
+          box-shadow: 0 2px 8px rgba(24, 144, 255, 0.1);
+          animation: fadeInUp 0.3s ease-out;
+        }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
         }
         /* マーカークラスタリングのスタイル */
         .marker-cluster-small {
