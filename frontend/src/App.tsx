@@ -1,23 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import {
   Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData
-} from '@/types';
+} from './types';
 import {
   API_CONFIG, MAP_CONFIG, HEATMAP_CONFIG, ICON_CONFIG, SAFETY_CONFIG, UI_CONFIG, LABELS
-} from '@/constants';
+} from './constants';
 import {
   getSchoolIcon, getCrimeIcon, getSafetyScoreColor, getSafetyLevelLabel,
   getSchoolTypeLabel, getPublicPrivateLabel, buildApiUrl, safeFetch,
   prepareHeatmapData, getAvailableCrimeCategories
-} from '@/utils/helpers';
+} from './utils/helpers';
 import {
   filterAreas, filterSchools, filterCrimes, filterSafetyScores
-} from '@/utils/filters';
-import { calculateStatistics } from '@/utils/statistics';
+} from './utils/filters';
+import { calculateStatistics } from './utils/statistics';
 import {
   createOrUpdateChart, getCrimeChartConfig, getSafetyChartConfig, getSchoolTypeChartConfig
-} from '@/utils/charts';
-import { generateCSVData, generatePDFReport, downloadCSV } from '@/utils/export';
+} from './utils/charts';
+import { generateCSVData, generatePDFReport, downloadCSV } from './utils/export';
 
 // Leafletはグローバルに読み込み済み
 declare const L: any;
@@ -56,6 +56,12 @@ const App: React.FC = () => {
   const [filteredSafetyScores, setFilteredSafetyScores] = useState<SafetyScore[]>([]);
   const [filteredAreas, setFilteredAreas] = useState<Area[]>([]);
   const [availableCrimeCategories, setAvailableCrimeCategories] = useState<string[]>([]);
+
+  // フィルタ表示状態管理
+  const [showFilters, setShowFilters] = useState<boolean>(false);
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState<number>(-1);
 
   // 統計ダッシュボード状態
   const [showStatistics, setShowStatistics] = useState<boolean>(false);
@@ -218,9 +224,30 @@ const App: React.FC = () => {
     setSafetyCircles(null);
     setHeatmapLayer(null);
 
-    // School markers
+    // School markers with clustering
     if (layerState.showSchools && filteredSchools.length > 0) {
-      const schoolMarkersGroup = L.layerGroup();
+      const schoolMarkersGroup = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        iconCreateFunction: function(cluster) {
+          const childCount = cluster.getChildCount();
+          let className = 'marker-cluster marker-cluster-';
+          if (childCount < 5) {
+            className += 'small';
+          } else if (childCount < 10) {
+            className += 'medium';
+          } else {
+            className += 'large';
+          }
+          return L.divIcon({
+            html: '<div><span>' + childCount + '</span></div>',
+            className: className,
+            iconSize: L.point(40, 40)
+          });
+        }
+      });
 
       filteredSchools.forEach((school: School) => {
         if (school.latitude && school.longitude) {
@@ -253,9 +280,22 @@ const App: React.FC = () => {
       setSchoolMarkers(schoolMarkersGroup);
     }
 
-    // Crime markers
+    // Crime markers with clustering  
     if (layerState.showCrimes && filteredCrimes.length > 0) {
-      const crimeMarkersGroup = L.layerGroup();
+      const crimeMarkersGroup = L.markerClusterGroup({
+        maxClusterRadius: 30,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        iconCreateFunction: function(cluster) {
+          const childCount = cluster.getChildCount();
+          return L.divIcon({
+            html: '<div><span>' + childCount + '</span></div>',
+            className: 'marker-cluster marker-cluster-crime',
+            iconSize: L.point(35, 35)
+          });
+        }
+      });
 
       filteredCrimes.forEach((crime: Crime) => {
         if (crime.latitude && crime.longitude) {
@@ -377,8 +417,129 @@ const App: React.FC = () => {
   };
 
   // フィルタハンドラ関数
+  const generateSearchSuggestions = (searchTerm: string): string[] => {
+    if (!searchTerm || searchTerm.length < 1) return [];
+    
+    const suggestions = new Set<string>();
+    const term = searchTerm.toLowerCase();
+    
+    // エリア名から検索
+    areas.forEach(area => {
+      if (area.name.toLowerCase().includes(term)) {
+        suggestions.add(area.name);
+      }
+    });
+    
+    // 学校名から検索
+    schools.forEach(school => {
+      if (school.name.toLowerCase().includes(term)) {
+        suggestions.add(school.name);
+      }
+    });
+    
+    // 学校種別から検索
+    const schoolTypes = ['elementary', 'junior_high', 'high'] as School['type'][];
+    schoolTypes.forEach(type => {
+      const label = getSchoolTypeLabel(type);
+      if (label.toLowerCase().includes(term)) {
+        suggestions.add(label);
+      }
+    });
+    
+    // 公立/私立から検索
+    if ('公立'.includes(term) || 'public'.toLowerCase().includes(term)) {
+      suggestions.add('公立');
+    }
+    if ('私立'.includes(term) || 'private'.toLowerCase().includes(term)) {
+      suggestions.add('私立');
+    }
+    
+    // 犯罪種別から検索
+    availableCrimeCategories.forEach(category => {
+      if (category.toLowerCase().includes(term)) {
+        suggestions.add(category);
+      }
+    });
+    
+    return Array.from(suggestions).slice(0, 8); // 最大8件まで
+  };
+
   const handleSearchChange = (searchTerm: string) => {
     setFilterState(prev => ({ ...prev, searchTerm }));
+    setSelectedSuggestionIndex(-1); // リセット
+    
+    // オートコンプリートの更新
+    if (searchTerm.length > 0) {
+      const suggestions = generateSearchSuggestions(searchTerm);
+      setSearchSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+    } else {
+      setSearchSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || searchSuggestions.length === 0) return;
+    
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => 
+          prev < searchSuggestions.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedSuggestionIndex(prev => 
+          prev > 0 ? prev - 1 : searchSuggestions.length - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < searchSuggestions.length) {
+          handleSuggestionClick(searchSuggestions[selectedSuggestionIndex]);
+        }
+        break;
+      case 'Escape':
+        setShowSuggestions(false);
+        setSelectedSuggestionIndex(-1);
+        break;
+    }
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setFilterState(prev => ({ ...prev, searchTerm: suggestion }));
+    setShowSuggestions(false);
+    setSearchSuggestions([]);
+    setSelectedSuggestionIndex(-1);
+  };
+
+  const highlightSearchTerm = (text: string, searchTerm: string): React.ReactNode => {
+    if (!searchTerm) return text;
+    
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    const parts = text.split(regex);
+    
+    return parts.map((part, index) => {
+      if (part.toLowerCase() === searchTerm.toLowerCase()) {
+        return <mark key={index} className="highlight">{part}</mark>;
+      }
+      return part;
+    });
+  };
+
+  const handleSearchBlur = () => {
+    // 少し遅延させてクリックを可能にする
+    setTimeout(() => {
+      setShowSuggestions(false);
+    }, 200);
+  };
+
+  const handleSearchFocus = () => {
+    if (filterState.searchTerm.length > 0 && searchSuggestions.length > 0) {
+      setShowSuggestions(true);
+    }
   };
 
   const handleSchoolTypeToggle = (type: School['type']) => {
@@ -420,6 +581,11 @@ const App: React.FC = () => {
       showPublicOnly: false,
       showPrivateOnly: false
     });
+  };
+
+  // フィルタハンドラ
+  const handleToggleFilters = () => {
+    setShowFilters(prev => !prev);
   };
 
   // 統計機能ハンドラ
@@ -492,123 +658,157 @@ const App: React.FC = () => {
 
         {/* Search and Filter controls */}
         <div className="search-filters">
-          <h3 style={{marginTop: 0, marginBottom: '12px', color: '#333', fontSize: '16px'}}>
-            {LABELS.UI.SEARCH_FILTERS}
-          </h3>
-          
-          {/* Search box */}
-          <div className="search-box">
-            <input
-              type="text"
-              placeholder={LABELS.UI.SEARCH_PLACEHOLDER}
-              value={filterState.searchTerm}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              className="search-input"
-            />
-          </div>
-          
-          {/* School type filter */}
-          <div className="filter-group">
-            <label className="filter-group-label">{LABELS.UI.SCHOOL_TYPE_FILTER}</label>
-            <div className="filter-checkboxes">
-              {(['elementary', 'junior_high', 'high'] as School['type'][]).map(type =>
-                <label key={type} className="checkbox-label small">
-                  <input
-                    type="checkbox"
-                    checked={filterState.selectedSchoolTypes.includes(type)}
-                    onChange={() => handleSchoolTypeToggle(type)}
-                  />
-                  {` ${getSchoolTypeLabel(type)}`}
-                </label>
-              )}
+          <div className="filter-header" onClick={handleToggleFilters}>
+            <h3 style={{margin: 0, color: '#333', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+              {LABELS.UI.SEARCH_FILTERS}
+              <span className={`filter-toggle ${showFilters ? 'open' : ''}`}>▼</span>
+            </h3>
+            <div className="filter-summary" style={{fontSize: '12px', color: '#666', marginTop: '4px'}}>
+              {`学校${filteredSchools.length}件 | 犯罪${filteredCrimes.length}件`}
+              {filterState.searchTerm && ` | 検索: "${filterState.searchTerm}"`}
+              {(filterState.selectedSchoolTypes.length > 0 || filterState.selectedCrimeCategories.length > 0 || 
+                filterState.showPublicOnly || filterState.showPrivateOnly || 
+                filterState.safetyScoreRange[0] > 0 || filterState.safetyScoreRange[1] < 100) && 
+                <span style={{color: '#1890ff', fontWeight: 'bold'}}> (フィルタ適用中)</span>
+              }
             </div>
           </div>
           
-          {/* Crime type filter */}
-          {availableCrimeCategories.length > 0 && (
-            <div className="filter-group">
-              <label className="filter-group-label">{LABELS.UI.CRIME_TYPE_FILTER}</label>
-              <div className="filter-checkboxes">
-                {availableCrimeCategories.map(category =>
-                  <label key={category} className="checkbox-label small">
+          {showFilters && (
+            <div className="filter-content" style={{marginTop: '12px'}}>
+              {/* Search box */}
+              <div className="search-box">
+                <div className="search-input-container">
+                  <input
+                    type="text"
+                    placeholder={LABELS.UI.SEARCH_PLACEHOLDER}
+                    value={filterState.searchTerm}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    onFocus={handleSearchFocus}
+                    onBlur={handleSearchBlur}
+                    className="search-input"
+                  />
+                  {showSuggestions && searchSuggestions.length > 0 && (
+                    <div className="search-suggestions">
+                      {searchSuggestions.map((suggestion, index) => (
+                        <div
+                          key={index}
+                          className={`search-suggestion-item ${
+                            index === selectedSuggestionIndex ? 'selected' : ''
+                          }`}
+                          onClick={() => handleSuggestionClick(suggestion)}
+                        >
+                          <span className="suggestion-icon">🔍</span>
+                          <span className="suggestion-text">
+                            {highlightSearchTerm(suggestion, filterState.searchTerm)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* School type filter */}
+              <div className="filter-group">
+                <label className="filter-group-label">{LABELS.UI.SCHOOL_TYPE_FILTER}</label>
+                <div className="filter-checkboxes">
+                  {(['elementary', 'junior_high', 'high'] as School['type'][]).map(type =>
+                    <label key={type} className="checkbox-label small">
+                      <input
+                        type="checkbox"
+                        checked={filterState.selectedSchoolTypes.includes(type)}
+                        onChange={() => handleSchoolTypeToggle(type)}
+                      />
+                      {` ${getSchoolTypeLabel(type)}`}
+                    </label>
+                  )}
+                </div>
+              </div>
+              
+              {/* Crime type filter */}
+              {availableCrimeCategories.length > 0 && (
+                <div className="filter-group">
+                  <label className="filter-group-label">{LABELS.UI.CRIME_TYPE_FILTER}</label>
+                  <div className="filter-checkboxes">
+                    {availableCrimeCategories.map(category =>
+                      <label key={category} className="checkbox-label small">
+                        <input
+                          type="checkbox"
+                          checked={filterState.selectedCrimeCategories.includes(category)}
+                          onChange={() => handleCrimeCategoryToggle(category)}
+                        />
+                        {` ${category}`}
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
+              
+              {/* Public/Private filter */}
+              <div className="filter-group">
+                <label className="filter-group-label">{LABELS.UI.PUBLIC_PRIVATE_FILTER}</label>
+                <div className="filter-checkboxes">
+                  <label className="checkbox-label small">
                     <input
                       type="checkbox"
-                      checked={filterState.selectedCrimeCategories.includes(category)}
-                      onChange={() => handleCrimeCategoryToggle(category)}
+                      checked={filterState.showPublicOnly}
+                      onChange={() => handlePublicPrivateToggle('public')}
                     />
-                    {` ${category}`}
+                    {` 公立のみ`}
                   </label>
-                )}
+                  <label className="checkbox-label small">
+                    <input
+                      type="checkbox"
+                      checked={filterState.showPrivateOnly}
+                      onChange={() => handlePublicPrivateToggle('private')}
+                    />
+                    {` 私立のみ`}
+                  </label>
+                </div>
               </div>
+              
+              {/* Safety score range slider */}
+              <div className="filter-group">
+                <label className="filter-group-label">
+                  {`${LABELS.UI.SAFETY_SCORE_FILTER}: ${filterState.safetyScoreRange[0]} - ${filterState.safetyScoreRange[1]}`}
+                </label>
+                <div className="range-sliders">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={filterState.safetyScoreRange[0]}
+                    onChange={(e) => handleSafetyScoreRangeChange([
+                      parseInt(e.target.value), 
+                      filterState.safetyScoreRange[1]
+                    ])}
+                    className="range-slider"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={filterState.safetyScoreRange[1]}
+                    onChange={(e) => handleSafetyScoreRangeChange([
+                      filterState.safetyScoreRange[0],
+                      parseInt(e.target.value)
+                    ])}
+                    className="range-slider"
+                  />
+                </div>
+              </div>
+              
+              {/* Clear filters button */}
+              <button onClick={handleClearFilters} className="clear-filters-btn">
+                {LABELS.UI.CLEAR_FILTERS}
+              </button>
             </div>
           )}
           
-          {/* Public/Private filter */}
-          <div className="filter-group">
-            <label className="filter-group-label">{LABELS.UI.PUBLIC_PRIVATE_FILTER}</label>
-            <div className="filter-checkboxes">
-              <label className="checkbox-label small">
-                <input
-                  type="checkbox"
-                  checked={filterState.showPublicOnly}
-                  onChange={() => handlePublicPrivateToggle('public')}
-                />
-                {` 公立のみ`}
-              </label>
-              <label className="checkbox-label small">
-                <input
-                  type="checkbox"
-                  checked={filterState.showPrivateOnly}
-                  onChange={() => handlePublicPrivateToggle('private')}
-                />
-                {` 私立のみ`}
-              </label>
-            </div>
-          </div>
-          
-          {/* Safety score range slider */}
-          <div className="filter-group">
-            <label className="filter-group-label">
-              {`${LABELS.UI.SAFETY_SCORE_FILTER}: ${filterState.safetyScoreRange[0]} - ${filterState.safetyScoreRange[1]}`}
-            </label>
-            <div className="range-sliders">
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={filterState.safetyScoreRange[0]}
-                onChange={(e) => handleSafetyScoreRangeChange([
-                  parseInt(e.target.value), 
-                  filterState.safetyScoreRange[1]
-                ])}
-                className="range-slider"
-              />
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={filterState.safetyScoreRange[1]}
-                onChange={(e) => handleSafetyScoreRangeChange([
-                  filterState.safetyScoreRange[0],
-                  parseInt(e.target.value)
-                ])}
-                className="range-slider"
-              />
-            </div>
-          </div>
-          
-          {/* Clear filters button */}
-          <button onClick={handleClearFilters} className="clear-filters-btn">
-            {LABELS.UI.CLEAR_FILTERS}
-          </button>
-          
-          {/* Results count display */}
-          <div className="filter-results">
-            {`${LABELS.UI.FILTERED_RESULTS}: 学校${filteredSchools.length}件 | 犯罪${filteredCrimes.length}件`}
-          </div>
-          
           {/* Statistics toggle button */}
-          <button onClick={handleToggleStatistics} className="toggle-statistics-btn">
+          <button onClick={handleToggleStatistics} className="toggle-statistics-btn" style={{marginTop: '10px', width: '100%'}}>
             {showStatistics ? LABELS.UI.HIDE_STATISTICS : LABELS.UI.SHOW_STATISTICS}
           </button>
         </div>
@@ -787,6 +987,62 @@ const App: React.FC = () => {
           font-size: 14px;
           margin-bottom: 10px;
         }
+        /* 検索オートコンプリートのスタイル */
+        .search-input-container {
+          position: relative;
+        }
+        .search-suggestions {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          background: white;
+          border: 1px solid #ddd;
+          border-top: none;
+          border-radius: 0 0 4px 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          z-index: 1000;
+          max-height: 200px;
+          overflow-y: auto;
+        }
+        .search-suggestion-item {
+          display: flex;
+          align-items: center;
+          padding: 8px 12px;
+          cursor: pointer;
+          border-bottom: 1px solid #f0f0f0;
+          transition: background-color 0.2s ease;
+        }
+        .search-suggestion-item:last-child {
+          border-bottom: none;
+        }
+        .search-suggestion-item:hover {
+          background-color: #f8f9fa;
+        }
+        .search-suggestion-item:active {
+          background-color: #e9ecef;
+        }
+        .search-suggestion-item.selected {
+          background-color: #e7f3ff;
+          border-left: 3px solid #1890ff;
+        }
+        .suggestion-icon {
+          margin-right: 8px;
+          opacity: 0.6;
+          font-size: 12px;
+        }
+        .suggestion-text {
+          font-size: 14px;
+          color: #333;
+        }
+        /* ハイライトスタイル */
+        .highlight {
+          background-color: #fff3cd;
+          color: #856404;
+          font-weight: bold;
+          border-radius: 2px;
+          padding: 0 2px;
+        }
         .filter-group {
           margin: 15px 0;
         }
@@ -879,6 +1135,83 @@ const App: React.FC = () => {
           background: #e7f3ff;
           border-radius: 6px;
           border: 1px solid #1890ff;
+        }
+        /* マーカークラスタリングのスタイル */
+        .marker-cluster-small {
+          background-color: rgba(181, 226, 140, 0.6);
+        }
+        .marker-cluster-small div {
+          background-color: rgba(110, 204, 57, 0.6);
+        }
+        .marker-cluster-medium {
+          background-color: rgba(241, 211, 87, 0.6);
+        }
+        .marker-cluster-medium div {
+          background-color: rgba(240, 194, 12, 0.6);
+        }
+        .marker-cluster-large {
+          background-color: rgba(253, 156, 115, 0.6);
+        }
+        .marker-cluster-large div {
+          background-color: rgba(241, 128, 23, 0.6);
+        }
+        .marker-cluster-crime {
+          background-color: rgba(255, 107, 107, 0.6);
+        }
+        .marker-cluster-crime div {
+          background-color: rgba(255, 59, 48, 0.6);
+        }
+        .marker-cluster {
+          background-clip: padding-box;
+          border-radius: 20px;
+        }
+        .marker-cluster div {
+          width: 30px;
+          height: 30px;
+          margin-left: 5px;
+          margin-top: 5px;
+          text-align: center;
+          border-radius: 15px;
+          font: 12px "Helvetica Neue", Arial, Helvetica, sans-serif;
+        }
+        .marker-cluster span {
+          line-height: 30px;
+          color: white;
+          font-weight: bold;
+        }
+        /* フィルターヘッダーのスタイル */
+        .filter-header {
+          padding: 8px 0;
+          border-bottom: 1px solid #eee;
+          user-select: none;
+        }
+        .filter-header:hover {
+          background-color: #f8f9fa;
+          border-radius: 4px;
+          margin: -4px;
+          padding: 12px 4px;
+        }
+        .filter-toggle {
+          transition: transform 0.2s ease;
+          font-size: 12px;
+          color: #666;
+        }
+        .filter-toggle.open {
+          transform: rotate(180deg);
+        }
+        .filter-content {
+          animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+          }
+          to {
+            opacity: 1;
+            max-height: 1000px;
+          }
         }
       `}</style>
     </div>
