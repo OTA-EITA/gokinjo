@@ -1,0 +1,65 @@
+# Airflow ETL 便利コマンド集
+
+# DAG一覧（詳細版）
+.PHONY: airflow-list-dags
+airflow-list-dags: ## DAG詳細リスト表示
+	@echo "📋 利用可能なDAG一覧:"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
+
+# DAG手動実行（汎用版）
+.PHONY: airflow-run-dag
+airflow-run-dag: ## 指定DAGを手動実行 (make airflow-run-dag DAG_ID=dag_name)
+	@echo "🚀 DAG実行: $(DAG_ID)"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger $(DAG_ID)
+
+# DAG実行履歴確認
+.PHONY: airflow-runs
+airflow-runs: ## DAG実行履歴表示
+	@echo "📊 DAG実行履歴:"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list-runs
+
+# Airflow再起動
+.PHONY: airflow-restart
+airflow-restart: airflow-stop airflow-start ## Airflow環境再起動
+
+# テストDAG実行
+.PHONY: test-dag
+test-dag: ## テスト用DAG実行
+	@echo "🧪 テストDAG実行中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger test_crime_etl
+
+# 犯罪ETL DAG実行
+.PHONY: crime-etl
+crime-etl: ## 犯罪ETL DAG実行
+	@echo "🚨 犯罪ETL実行中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger tokyo_crime_etl
+
+# 学校ETL DAG実行  
+.PHONY: school-etl
+school-etl: ## 学校ETL DAG実行
+	@echo "🏫 学校ETL実行中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger tokyo_school_etl
+
+# DAG状態詳細確認
+.PHONY: airflow-check
+airflow-check: ## 全DAG状態詳細確認
+	@echo "🔍 DAG状態確認:"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
+	@echo ""
+	@echo "最近の実行履歴:"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list-runs --limit 10
+
+# Airflowクリーンアップ
+.PHONY: airflow-clean
+airflow-clean: ## Airflow完全クリーンアップ
+	@echo "🧹 Airflowクリーンアップ..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml down -v --remove-orphans
+	rm -rf airflow/{logs,plugins/__pycache__}
+	@echo "クリーンアップ完了"
+
+# Web UI開く
+.PHONY: airflow-ui
+airflow-ui: ## Airflow Web UIを開く
+	@echo "🌐 Airflow Web UIを開いています..."
+	open http://localhost:8082
+	@echo "ログイン情報: admin / admin"

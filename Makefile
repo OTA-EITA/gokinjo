@@ -99,6 +99,26 @@ airflow-trigger: ## ETL DAGを手動実行
 airflow-status: ## Airflow DAG状態確認
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
 
+airflow-restart: airflow-stop airflow-start ## Airflow環境再起動
+
+airflow-list-dags: ## DAG詳細リスト表示
+	@echo "📋 利用可能なDAG一覧:"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
+
+airflow-run-dag: ## 指定DAGを手動実行 (make airflow-run-dag DAG_ID=dag_name)
+	@if [ -z "$(DAG_ID)" ]; then echo "❌ DAG_IDを指定してください: make airflow-run-dag DAG_ID=tokyo_crime_etl"; exit 1; fi
+	@echo "🚀 DAG実行: $(DAG_ID)"
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger $(DAG_ID)
+
+test-dag: ## テスト用DAG実行
+	@echo "🧪 テストDAG実行中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger test_crime_etl
+
+airflow-ui: ## Airflow Web UIを開く
+	@echo "🌐 Airflow Web UIを開いています..."
+	open http://localhost:8082
+	@echo "ログイン情報: admin / admin"
+
 # 統合開発フロー
 full-start: start airflow-start ## フル環境起動 (アプリ + Airflow)
 
@@ -115,8 +135,33 @@ check-data: ## データベース状態確認
 
 etl-run: airflow-trigger ## ETL実行 (DAGトリガー)
 
+# DDL修正・制約管理（統合完了につき不要）
+# fix-constraints: ## UNIQUE制約を修正（DDL・DAG整合性問題を解決）
+# 	@echo "🔧 DDL・DAG整合性修正を実行中..."
+# 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/fix_unique_constraints.sql
+# 	@echo "✅ UNIQUE制約修正完了"
+
+# fix-geometry-constraints: ## GEOMETRY型対応UNIQUE制約修正（最終解決版）
+# 	@echo "🔧 GEOMETRY対応UNIQUE制約修正を実行中..."
+# 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/fix_geometry_unique_constraint.sql
+# 	@echo "✅ GEOMETRY対応UNIQUE制約修正完了"
+
+db-backup: ## データベースバックアップ
+	@echo "💾 データベースバックアップ中..."
+	mkdir -p backups
+	cd deployment && docker-compose exec -T postgis pg_dump -U postgres neighborhood_mapping > ../backups/db_backup_$(date +%Y%m%d_%H%M%S).sql
+	@echo "✅ バックアップ完了: backups/"
+
+validate-ddl: ## DDL・DAG整合性チェック
+	@echo "🔍 DDL・DAG整合性をチェック中..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -c "SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'crimes';"
+	@echo "✅ 制約確認完了"
+
 # 開発用ショートカット
 dev: setup start ## セットアップ + 起動 (開発開始時)
+
+fix-and-test: fix-constraints airflow-restart airflow-run-dag ## 制約修正 + Airflow再起動 + DAGテスト実行
+	@echo "🎯 制約修正・テスト実行完了"
 
 reset: clean setup start ## 完全リセット + 起動
 

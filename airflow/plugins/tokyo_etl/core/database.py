@@ -79,6 +79,12 @@ def get_database_stats() -> Dict:
         }
 
 
+def create_postgis_engine():
+    """PostGIS対応データベースエンジン作成"""
+    app_db_url = os.getenv("APP_DATABASE_URL", DATABASE_CONFIG["app_db_url"])
+    return create_engine(app_db_url)
+
+
 def check_database_connection() -> Dict:
     """データベース接続確認"""
     try:
