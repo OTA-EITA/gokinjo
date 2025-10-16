@@ -620,7 +620,7 @@ const App = () => {
           React.createElement('canvas', { 
             id: 'crimeChart', 
             className: 'chart-canvas',
-            ref: (canvas) => {
+            ref: (canvas: any) => {
               if (canvas && statisticsData) {
                 setTimeout(() => {
                   const config = getCrimeChartConfig(statisticsData.crimeByCategory);
@@ -637,7 +637,7 @@ const App = () => {
           React.createElement('canvas', { 
             id: 'safetyChart',
             className: 'chart-canvas',
-            ref: (canvas) => {
+            ref: (canvas: any) => {
               if (canvas && statisticsData) {
                 setTimeout(() => {
                   const config = getSafetyChartConfig(statisticsData.safetyScoreDistribution);
@@ -649,13 +649,13 @@ const App = () => {
         ),
         
         // School type chart
-        Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k] > 0) && 
+        Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k as School['type']] > 0) && 
         React.createElement('div', { className: 'chart-container' },
           React.createElement('h4', null, LABELS.UI.SCHOOL_TYPE_STATS),
           React.createElement('canvas', { 
             id: 'schoolTypeChart',
             className: 'chart-canvas',
-            ref: (canvas) => {
+            ref: (canvas: any) => {
               if (canvas && statisticsData) {
                 setTimeout(() => {
                   const config = getSchoolTypeChartConfig(statisticsData.schoolTypeDistribution, getSchoolTypeLabel);

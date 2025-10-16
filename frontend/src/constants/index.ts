@@ -17,6 +17,23 @@ export const API_CONFIG = {
 export const MAP_CONFIG = {
   CENTER: [35.6762, 139.6503] as [number, number],
   DEFAULT_ZOOM: 11,
+  TILE_LAYERS: {
+    standard: {
+      name: 'Standard',
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '© OpenStreetMap contributors'
+    },
+    satellite: {
+      name: 'Satellite',
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: '© Esri'
+    },
+    dark: {
+      name: 'Dark',
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '© OpenStreetMap © CARTO'
+    }
+  },
   TILE_LAYER: {
     URL: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     ATTRIBUTION: '© OpenStreetMap contributors'

@@ -44,7 +44,7 @@ status: ## サービス状態を確認
 	cd deployment && docker-compose ps
 
 clean: ## 開発環境を完全にクリーンアップ（データも削除）
-	@echo "🧹 開発環境をクリーンアップしています..."
+	@echo "開発環境をクリーンアップしています..."
 	cd deployment && docker-compose down -v --remove-orphans
 	docker system prune -f
 	@echo "クリーンアップ完了"
@@ -74,15 +74,15 @@ docs: ## ドキュメント生成
 
 # ETL Airflow環境管理
 airflow-start: ## Airflow ETL環境を起動
-	@echo "🚀 Airflow ETL環境を起動しています..."
+	@echo "Airflow ETL環境を起動しています..."
 	mkdir -p airflow/{dags,logs,plugins,config}
-	echo "AIRFLOW_UID=50000" > airflow/.env
+	@if [ ! -f airflow/.env ]; then echo ".envファイルを手動で作成してください: echo 'AIRFLOW_UID=50000' > airflow/.env"; fi
 	cd airflow && docker-compose -f docker-compose.airflow.yml up -d
-	@echo "✅ Airflow起動完了"
+	@echo "Airflow起動完了"
 	@echo "   Webserver: http://localhost:8082 (admin/admin)"
 
 airflow-stop: ## Airflow ETL環境を停止
-	@echo "⏹️ Airflow ETL環境を停止しています..."
+	@echo "Airflow ETL環境を停止しています..."
 	cd airflow && docker-compose -f docker-compose.airflow.yml down
 	@echo "停止完了"
 
@@ -93,7 +93,7 @@ airflow-shell: ## Airflow Webserverに接続
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver bash
 
 airflow-trigger: ## ETL DAGを手動実行
-	@echo "🔥 Tokyo Crime School ETL DAGを手動実行..."
+	@echo "Tokyo Crime School ETL DAGを手動実行..."
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger tokyo_crime_school_etl
 
 airflow-status: ## Airflow DAG状態確認
@@ -102,20 +102,20 @@ airflow-status: ## Airflow DAG状態確認
 airflow-restart: airflow-stop airflow-start ## Airflow環境再起動
 
 airflow-list-dags: ## DAG詳細リスト表示
-	@echo "📋 利用可能なDAG一覧:"
+	@echo "利用可能なDAG一覧:"
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags list
 
 airflow-run-dag: ## 指定DAGを手動実行 (make airflow-run-dag DAG_ID=dag_name)
-	@if [ -z "$(DAG_ID)" ]; then echo "❌ DAG_IDを指定してください: make airflow-run-dag DAG_ID=tokyo_crime_etl"; exit 1; fi
-	@echo "🚀 DAG実行: $(DAG_ID)"
+	@if [ -z "$(DAG_ID)" ]; then echo "DAG_IDを指定してください: make airflow-run-dag DAG_ID=tokyo_crime_etl"; exit 1; fi
+	@echo "DAG実行: $(DAG_ID)"
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger $(DAG_ID)
 
 test-dag: ## テスト用DAG実行
-	@echo "🧪 テストDAG実行中..."
+	@echo "テストDAG実行中..."
 	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger test_crime_etl
 
 airflow-ui: ## Airflow Web UIを開く
-	@echo "🌐 Airflow Web UIを開いています..."
+	@echo "Airflow Web UIを開いています..."
 	open http://localhost:8082
 	@echo "ログイン情報: admin / admin"
 
@@ -125,12 +125,12 @@ full-start: start airflow-start ## フル環境起動 (アプリ + Airflow)
 full-stop: stop airflow-stop ## フル環境停止
 
 add-data: ## 台東区・文京区データ追加
-	@echo "📊 台東区・文京区データを追加しています..."
+	@echo "台東区・文京区データを追加しています..."
 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/add_taito_bunkyo_data.sql
-	@echo "✅ データ追加完了"
+	@echo "データ追加完了"
 
 check-data: ## データベース状態確認
-	@echo "🔍 データベース状態を確認しています..."
+	@echo "データベース状態を確認しています..."
 	cd deployment && ./check_data.sh
 
 etl-run: airflow-trigger ## ETL実行 (DAGトリガー)
@@ -147,21 +147,21 @@ etl-run: airflow-trigger ## ETL実行 (DAGトリガー)
 # 	@echo "✅ GEOMETRY対応UNIQUE制約修正完了"
 
 db-backup: ## データベースバックアップ
-	@echo "💾 データベースバックアップ中..."
+	@echo "データベースバックアップ中..."
 	mkdir -p backups
 	cd deployment && docker-compose exec -T postgis pg_dump -U postgres neighborhood_mapping > ../backups/db_backup_$(date +%Y%m%d_%H%M%S).sql
-	@echo "✅ バックアップ完了: backups/"
+	@echo "バックアップ完了: backups/"
 
 validate-ddl: ## DDL・DAG整合性チェック
-	@echo "🔍 DDL・DAG整合性をチェック中..."
+	@echo "DDL・DAG整合性をチェック中..."
 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -c "SELECT constraint_name, constraint_type FROM information_schema.table_constraints WHERE table_name = 'crimes';"
-	@echo "✅ 制約確認完了"
+	@echo "制約確認完了"
 
 # 開発用ショートカット
 dev: setup start ## セットアップ + 起動 (開発開始時)
 
 fix-and-test: fix-constraints airflow-restart airflow-run-dag ## 制約修正 + Airflow再起動 + DAGテスト実行
-	@echo "🎯 制約修正・テスト実行完了"
+	@echo "制約修正・テスト実行完了"
 
 reset: clean setup start ## 完全リセット + 起動
 
@@ -171,3 +171,36 @@ monitoring: ## モニタリングダッシュボードを開く
 	open http://localhost:9001
 	@echo "Airflow: http://localhost:8080 (admin/admin)"
 	@echo "MinIO: http://localhost:9001 (minio/minio123)"
+
+# Phase 3: Priority 3区データ拡張（for文版）
+add-priority3: ## Priority 3区データ一括追加（墨田・江東・品川・目黒区）
+	@echo "Priority 3区データ一括追加開始..."
+	chmod +x scripts/add_priority3_original.sh
+	./scripts/add_priority3_original.sh
+	@echo "Priority 3区データ追加完了"
+
+run-priority3: ## Priority 3区処理DAG実行
+	@echo "Priority 3区処理DAG実行中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec airflow-webserver airflow dags trigger tokyo_crime_school_etl_priority3_generic
+	@echo "DAG実行開始"
+
+test-config: ## 区設定ファイルテスト
+	@echo "区設定ファイルをテスト中..."
+	cd airflow && docker-compose -f docker-compose.airflow.yml exec -T airflow-scheduler python -c "import sys; sys.path.append('/opt/airflow/plugins'); from tokyo_etl.config.district_data import get_districts_by_priority; districts = get_districts_by_priority(3); print(f'Priority 3区: {len(districts)}区'); [print(f'  {data[\"name\"]} ({ward_code}): エリア{len(data[\"areas\"])}, 学校{len(data[\"schools\"])}, 犯罪{len(data[\"crimes\"])}') for ward_code, data in districts.items()]"
+	@echo "設定ファイルテスト完了"
+
+check-priority3: ## Priority 3区データ確認
+	@echo "Priority 3区データ状況確認..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -c "\
+		SELECT 'Priority 3区データ状況' as summary, \
+		COUNT(DISTINCT ward_code) as ward_count, \
+		COUNT(DISTINCT a.id) as total_areas, \
+		COUNT(DISTINCT s.id) as total_schools, \
+		COUNT(DISTINCT c.id) as total_crimes \
+		FROM areas a LEFT JOIN schools s ON s.area_id = a.id LEFT JOIN crimes c ON c.area_id = a.id \
+		WHERE a.ward_code IN ('13107', '13108', '13109', '13110'); \
+		SELECT ward_code, COUNT(DISTINCT a.id) as areas, COUNT(DISTINCT s.id) as schools, COUNT(DISTINCT c.id) as crimes \
+		FROM areas a LEFT JOIN schools s ON s.area_id = a.id LEFT JOIN crimes c ON c.area_id = a.id \
+		WHERE a.ward_code IN ('13107', '13108', '13109', '13110') \
+		GROUP BY ward_code ORDER BY ward_code;"
+	@echo "データ確認完了"

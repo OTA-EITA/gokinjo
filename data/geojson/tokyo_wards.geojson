@@ -1,0 +1,252 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13101",
+        "ward_name": "千代田区",
+        "name_en": "Chiyoda",
+        "population": 66680
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7450, 35.6940],
+          [139.7650, 35.6940],
+          [139.7650, 35.7040],
+          [139.7450, 35.7040],
+          [139.7450, 35.6940]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13103",
+        "ward_name": "港区",
+        "name_en": "Minato",
+        "population": 260379
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7300, 35.6400],
+          [139.7600, 35.6400],
+          [139.7600, 35.6650],
+          [139.7300, 35.6650],
+          [139.7300, 35.6400]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13104",
+        "ward_name": "新宿区",
+        "name_en": "Shinjuku",
+        "population": 345142
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6800, 35.6850],
+          [139.7200, 35.6850],
+          [139.7200, 35.7100],
+          [139.6800, 35.7100],
+          [139.6800, 35.6850]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13105",
+        "ward_name": "文京区",
+        "name_en": "Bunkyo",
+        "population": 229969
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7400, 35.7050],
+          [139.7700, 35.7050],
+          [139.7700, 35.7300],
+          [139.7400, 35.7300],
+          [139.7400, 35.7050]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13106",
+        "ward_name": "台東区",
+        "name_en": "Taito",
+        "population": 209992
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7700, 35.7050],
+          [139.8000, 35.7050],
+          [139.8000, 35.7250],
+          [139.7700, 35.7250],
+          [139.7700, 35.7050]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13110",
+        "ward_name": "品川区",
+        "name_en": "Shinagawa",
+        "population": 402556
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.7000, 35.6000],
+          [139.7400, 35.6000],
+          [139.7400, 35.6300],
+          [139.7000, 35.6300],
+          [139.7000, 35.6000]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13111",
+        "ward_name": "目黒区",
+        "name_en": "Meguro",
+        "population": 283909
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6700, 35.6200],
+          [139.7000, 35.6200],
+          [139.7000, 35.6500],
+          [139.6700, 35.6500],
+          [139.6700, 35.6200]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13112",
+        "ward_name": "大田区",
+        "name_en": "Ota",
+        "population": 738067
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6800, 35.5500],
+          [139.7500, 35.5500],
+          [139.7500, 35.6000],
+          [139.6800, 35.6000],
+          [139.6800, 35.5500]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13113",
+        "ward_name": "世田谷区",
+        "name_en": "Setagaya",
+        "population": 939099
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6200, 35.6200],
+          [139.6700, 35.6200],
+          [139.6700, 35.6800],
+          [139.6200, 35.6800],
+          [139.6200, 35.6200]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13114",
+        "ward_name": "渋谷区",
+        "name_en": "Shibuya",
+        "population": 232666
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6700, 35.6500],
+          [139.7100, 35.6500],
+          [139.7100, 35.6800],
+          [139.6700, 35.6800],
+          [139.6700, 35.6500]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13115",
+        "ward_name": "中野区",
+        "name_en": "Nakano",
+        "population": 343437
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6400, 35.6900],
+          [139.6800, 35.6900],
+          [139.6800, 35.7150],
+          [139.6400, 35.7150],
+          [139.6400, 35.6900]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13120",
+        "ward_name": "練馬区",
+        "name_en": "Nerima",
+        "population": 743353
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.6200, 35.7200],
+          [139.6700, 35.7200],
+          [139.6700, 35.7500],
+          [139.6200, 35.7500],
+          [139.6200, 35.7200]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "ward_code": "13122",
+        "ward_name": "江戸川区",
+        "name_en": "Edogawa",
+        "population": 696797
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [139.8500, 35.6800],
+          [139.9000, 35.6800],
+          [139.9000, 35.7100],
+          [139.8500, 35.7100],
+          [139.8500, 35.6800]
+        ]]
+      }
+    }
+  ]
+}
