@@ -1,5 +1,5 @@
-import { School, Crime, SafetyScore } from '@/types';
-import { ICON_CONFIG, SAFETY_CONFIG, LABELS, ERROR_MESSAGES } from '@/constants';
+import { School, Crime, SafetyScore } from '../types';
+import { ICON_CONFIG, SAFETY_CONFIG, LABELS, ERROR_MESSAGES } from '../constants';
 
 // ========== 共通ユーティリティ関数 ==========
 

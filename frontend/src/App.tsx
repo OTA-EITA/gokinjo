@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData
+  Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData, MapControlSettings
 } from './types';
 import {
   API_CONFIG, MAP_CONFIG, HEATMAP_CONFIG, ICON_CONFIG, SAFETY_CONFIG, UI_CONFIG, LABELS
@@ -10,6 +10,8 @@ import {
   getSchoolTypeLabel, getPublicPrivateLabel, buildApiUrl, safeFetch,
   prepareHeatmapData, getAvailableCrimeCategories
 } from './utils/helpers';
+import { SafetyScoreCalculator } from './utils/SafetyScoreCalculator';
+import type { SafetyScoreResult } from './types';
 import {
   filterAreas, filterSchools, filterCrimes, filterSafetyScores
 } from './utils/filters';
@@ -18,6 +20,13 @@ import {
   createOrUpdateChart, getCrimeChartConfig, getSafetyChartConfig, getSchoolTypeChartConfig
 } from './utils/charts';
 import { generateCSVData, generatePDFReport, downloadCSV } from './utils/export';
+import EnhancedMapControls from './components/EnhancedMapControls';
+import AreaComparison from './components/AreaComparison';
+import TimeSeriesAnalysis from './components/TimeSeriesAnalysis';
+import { generateAreaComparisonData, downloadAreaComparisonCSV } from './utils/areaComparison';
+import { loadGeoJSON, createGeoJSONLayer, highlightArea, fitToAreaBounds, createAreaStatsOverlay } from './utils/geojson';
+import type { AreaComparisonData } from './types';
+import type { GeoJSONFeatureCollection } from './utils/geojson';
 
 // Leafletはグローバルに読み込み済み
 declare const L: any;
@@ -28,7 +37,9 @@ const App: React.FC = () => {
   const [schools, setSchools] = useState<School[]>([]);
   const [crimes, setCrimes] = useState<Crime[]>([]);
   const [safetyScores, setSafetyScores] = useState<SafetyScore[]>([]);
+  const [calculatedSafetyScores, setCalculatedSafetyScores] = useState<SafetyScoreResult[]>([]);
   const [selectedArea, setSelectedArea] = useState<Area | null>(null);
+  const [safetyCalculator] = useState(() => new SafetyScoreCalculator());
   const [map, setMap] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -67,7 +78,7 @@ const App: React.FC = () => {
   const [showStatistics, setShowStatistics] = useState<boolean>(false);
   const [statisticsData, setStatisticsData] = useState<StatisticsData | null>(null);
   const [chartInstances, setChartInstances] = useState<Record<string, any>>({});
-  const [chartsInitialized, setChartsInitialized] = useState<boolean>(false);
+  const [, setChartsInitialized] = useState<boolean>(false);
 
   // Chart.js 初期化用 refs
   const crimeChartRef = useRef<HTMLCanvasElement>(null);
@@ -79,6 +90,127 @@ const App: React.FC = () => {
   const [crimeMarkers, setCrimeMarkers] = useState<any | null>(null);
   const [safetyCircles, setSafetyCircles] = useState<any | null>(null);
   const [heatmapLayer, setHeatmapLayer] = useState<any>(null);
+  const [currentTileLayer, setCurrentTileLayer] = useState<any | null>(null);
+
+  // Map Control Settings
+  const [mapSettings, setMapSettings] = useState<MapControlSettings>({
+    show_area_boundaries: false,
+    show_school_labels: false,
+    show_crime_heatmap: false,
+    show_safety_zones: true,
+    cluster_markers: true,
+    map_mode: 'standard',
+    animation_enabled: true
+  });
+
+  // Area Comparison
+  const [showComparison, setShowComparison] = useState<boolean>(false);
+  const [comparisonData, setComparisonData] = useState<AreaComparisonData[]>([]);
+
+  // Time Series Analysis
+  const [showTimeSeries, setShowTimeSeries] = useState<boolean>(false);
+
+  // GeoJSON Boundaries
+  const [geojsonData, setGeojsonData] = useState<GeoJSONFeatureCollection | null>(null);
+  const [geojsonLayer, setGeojsonLayer] = useState<any | null>(null);
+  const [showBoundaries, setShowBoundaries] = useState<boolean>(true);
+
+  // Generate comparison data when data changes
+  useEffect(() => {
+    if (areas.length > 0 && schools.length > 0) {
+      const comparison = generateAreaComparisonData(
+        areas,
+        schools,
+        crimes,
+        calculatedSafetyScores
+      );
+      setComparisonData(comparison);
+      console.log(`Generated comparison data for ${comparison.length} areas`);
+    }
+  }, [areas, schools, crimes, calculatedSafetyScores]);
+
+  // Load GeoJSON boundaries
+  useEffect(() => {
+    const loadBoundaries = async () => {
+      try {
+        const data = await loadGeoJSON('/geojson/tokyo_wards.geojson');
+        setGeojsonData(data);
+        console.log(`Loaded GeoJSON with ${data.features.length} wards`);
+      } catch (error) {
+        console.error('Failed to load GeoJSON:', error);
+      }
+    };
+
+    loadBoundaries();
+  }, []);
+
+  // Manage GeoJSON layer on map
+  useEffect(() => {
+    if (!map || !geojsonData) return;
+
+    // Remove existing GeoJSON layer
+    if (geojsonLayer && map.hasLayer(geojsonLayer)) {
+      map.removeLayer(geojsonLayer);
+    }
+
+    // Add GeoJSON layer if boundaries are enabled
+    if (showBoundaries) {
+      const layer = createGeoJSONLayer(L, geojsonData, {
+        onEachFeature: (feature, layer) => {
+          // Custom click handler
+          layer.on('click', (e: any) => {
+            const wardCode = feature.properties.ward_code;
+            const area = areas.find(a => a.ward_code === wardCode);
+            if (area) {
+              handleAreaClick(area);
+              fitToAreaBounds(map, layer);
+            }
+          });
+
+          // Hover effect
+          layer.on('mouseover', (e: any) => {
+            highlightArea(e.target, true);
+            
+            // Show stats overlay
+            const wardCode = feature.properties.ward_code;
+            const areaSchools = schools.filter(s => {
+              const schoolArea = areas.find(a => a.id === s.area_id);
+              return schoolArea?.ward_code === wardCode;
+            });
+            const areaCrimes = crimes.filter(c => {
+              const crimeArea = areas.find(a => a.id === c.area_id);
+              return crimeArea?.ward_code === wardCode;
+            });
+            const avgScore = calculatedSafetyScores.length > 0
+              ? calculatedSafetyScores
+                  .filter(s => areaSchools.some(as => as.id === s.school_id))
+                  .reduce((sum, s) => sum + s.score, 0) / Math.max(1, calculatedSafetyScores.filter(s => areaSchools.some(as => as.id === s.school_id)).length)
+              : 75;
+
+            const overlay = createAreaStatsOverlay(
+              feature.properties.ward_name,
+              {
+                schools: areaSchools.length,
+                crimes: areaCrimes.length,
+                safetyScore: avgScore
+              }
+            );
+            e.target.bindPopup(overlay).openPopup();
+          });
+
+          layer.on('mouseout', (e: any) => {
+            highlightArea(e.target, false);
+          });
+        }
+      });
+
+      layer.addTo(map);
+      setGeojsonLayer(layer);
+      console.log('GeoJSON boundaries added to map');
+    } else {
+      setGeojsonLayer(null);
+    }
+  }, [map, geojsonData, showBoundaries, areas, schools, crimes, calculatedSafetyScores]);
 
   // ========== Effect フック ==========
   useEffect(() => {
@@ -87,6 +219,8 @@ const App: React.FC = () => {
       if (!map) {
         initializeMap();
       }
+      // APIヘルスチェック
+      checkApiHealth();
       loadAreas();
     } else {
       // ライブラリの読み込みを待つ
@@ -100,6 +234,22 @@ const App: React.FC = () => {
   useEffect(() => {
     displayDataOnMap();
   }, [filteredSchools, filteredCrimes, filteredSafetyScores, layerState, map]);
+
+  // Auto-calculate safety scores when schools and crimes are loaded
+  useEffect(() => {
+    if (schools.length > 0 && crimes.length > 0 && safetyCalculator) {
+      console.log(`Calculating safety scores for ${schools.length} schools...`);
+      try {
+        const scores = safetyCalculator.calculateBatchScores(schools, crimes);
+        setCalculatedSafetyScores(scores);
+        console.log(`Safety scores calculated: ${scores.length} results`);
+      } catch (error) {
+        console.error('Failed to calculate safety scores:', error);
+      }
+    } else {
+      setCalculatedSafetyScores([]);
+    }
+  }, [schools, crimes, safetyCalculator]);
 
   // フィルタ適用処理
   useEffect(() => {
@@ -174,7 +324,49 @@ const App: React.FC = () => {
     };
   }, [showStatistics, statisticsData]); // 依存配列をシンプルに
 
+  // Map tile layer switching
+  useEffect(() => {
+    if (!map) return;
+
+    // Remove current tile layer
+    if (currentTileLayer) {
+      map.removeLayer(currentTileLayer);
+    }
+
+    // Add new tile layer based on map mode
+    const tileConfig = MAP_CONFIG.TILE_LAYERS[mapSettings.map_mode];
+    const newTileLayer = L.tileLayer(tileConfig.url, {
+      attribution: tileConfig.attribution,
+      maxZoom: 18,
+      fadeAnimation: mapSettings.animation_enabled
+    });
+
+    newTileLayer.addTo(map);
+    setCurrentTileLayer(newTileLayer);
+
+    console.log(`Map style changed to: ${mapSettings.map_mode}`);
+  }, [map, mapSettings.map_mode, mapSettings.animation_enabled]);
+
   // ========== コア機能 ==========
+  
+  /**
+   * APIヘルスチェック
+   */
+  const checkApiHealth = async (): Promise<void> => {
+    try {
+      const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.HEALTH}`;
+      console.log('Checking API health:', url);
+      const response = await fetch(url);
+      if (response.ok) {
+        console.log('API is healthy');
+      } else {
+        console.error(`API health check failed: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('API is not reachable:', error);
+      console.error('Make sure backend is running: make start');
+    }
+  };
   
   /**
    * Chart.jsを安全に初期化
@@ -199,7 +391,7 @@ const App: React.FC = () => {
       }
 
       // 学校種別チャート
-      if (Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k] > 0) && schoolTypeChartRef.current) {
+      if (Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k as School['type']] > 0) && schoolTypeChartRef.current) {
         const config = getSchoolTypeChartConfig(statisticsData.schoolTypeDistribution, getSchoolTypeLabel);
         createOrUpdateChart('schoolTypeChart', config.type, config.data, config.options, chartInstances, setChartInstances);
       }
@@ -236,9 +428,13 @@ const App: React.FC = () => {
 
       const mapInstance = L.map('map').setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
 
-      L.tileLayer(MAP_CONFIG.TILE_LAYER.URL, {
-        attribution: MAP_CONFIG.TILE_LAYER.ATTRIBUTION
-      }).addTo(mapInstance);
+      // Initial tile layer (will be replaced by useEffect)
+      const initialTileLayer = L.tileLayer(MAP_CONFIG.TILE_LAYERS.standard.url, {
+        attribution: MAP_CONFIG.TILE_LAYERS.standard.attribution,
+        maxZoom: 18
+      });
+      initialTileLayer.addTo(mapInstance);
+      setCurrentTileLayer(initialTileLayer);
 
       setMap(mapInstance);
       console.log('✅ Map initialized successfully');
@@ -253,10 +449,17 @@ const App: React.FC = () => {
   const loadAreas = async (): Promise<void> => {
     try {
       const url = `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.AREAS}`;
+      console.log('Loading areas from:', url);
       const data = await safeFetch(url);
       
+      console.log('Areas response:', data);
+      
       if (data) {
-        setAreas(data.areas || []);
+        const areasData = data.areas || [];
+        console.log(`Loaded ${areasData.length} areas:`, areasData);
+        setAreas(areasData);
+      } else {
+        console.error('No data received from API');
       }
       setLoading(false);
     } catch (error) {
@@ -330,7 +533,7 @@ const App: React.FC = () => {
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true,
-        iconCreateFunction: function(cluster) {
+        iconCreateFunction: function(cluster: any) {
           const childCount = cluster.getChildCount();
           let className = 'marker-cluster marker-cluster-';
           if (childCount < 5) {
@@ -350,9 +553,18 @@ const App: React.FC = () => {
 
       filteredSchools.forEach((school: School) => {
         if (school.latitude && school.longitude) {
-          const safetyScore = filteredSafetyScores.find((s: SafetyScore) => s.school_id === school.id);
-          const scoreText = safetyScore ?
-            `<br/><strong>安全スコア: ${safetyScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(safetyScore.score_level)})` : '';
+          // Use calculated safety score (priority) or API safety score
+          const calculatedScore = calculatedSafetyScores.find((s: SafetyScoreResult) => s.school_id === school.id);
+          const apiScore = filteredSafetyScores.find((s: SafetyScore) => s.school_id === school.id);
+          
+          let scoreText = '';
+          if (calculatedScore) {
+            scoreText = `<br/><strong>安全スコア: ${calculatedScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(calculatedScore.score_level)})`
+              + `<br/>周辺犯罪: ${calculatedScore.crime_count}件`
+              + `<br/>犯罪密度: ${calculatedScore.crime_density.toFixed(2)}/km²`;
+          } else if (apiScore) {
+            scoreText = `<br/><strong>安全スコア: ${apiScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(apiScore.score_level)})`;
+          }
 
           const icon = L.icon({
             iconUrl: getSchoolIcon(school),
@@ -386,7 +598,7 @@ const App: React.FC = () => {
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true,
-        iconCreateFunction: function(cluster) {
+        iconCreateFunction: function(cluster: any) {
           const childCount = cluster.getChildCount();
           return L.divIcon({
             html: '<div><span>' + childCount + '</span></div>',
@@ -711,9 +923,22 @@ const App: React.FC = () => {
     }
   };
 
-  const handleCreateChart = (canvasId: string, type: string, data: any, options: any) => {
-    createOrUpdateChart(canvasId, type, data, options, chartInstances, setChartInstances);
+  // Area comparison handlers
+  const handleToggleComparison = () => {
+    setShowComparison(prev => !prev);
   };
+
+  const handleExportComparisonCSV = (selectedAreas: AreaComparisonData[]) => {
+    downloadAreaComparisonCSV(selectedAreas);
+    console.log(`Exported comparison data for ${selectedAreas.length} areas`);
+  };
+
+  // Time series analysis handler
+  const handleToggleTimeSeries = () => {
+    setShowTimeSeries(prev => !prev);
+  };
+
+
 
   // ========== レンダリング ==========
   return (
@@ -723,6 +948,11 @@ const App: React.FC = () => {
         <h2 style={{color: '#666', fontSize: '14px', marginTop: 0}}>{LABELS.UI.APP_SUBTITLE}</h2>
 
         {loading && <div className="loading">{LABELS.UI.LOADING}</div>}
+        {!loading && schools.length > 0 && crimes.length > 0 && calculatedSafetyScores.length === 0 && (
+          <div className="loading" style={{background: '#fff7e6', color: '#fa8c16', border: '1px solid #ffd591', padding: '10px', borderRadius: '4px', fontSize: '12px'}}>
+            Calculating safety scores...
+          </div>
+        )}
 
         {/* Layer controls */}
         <div className="layer-controls">
@@ -761,7 +991,45 @@ const App: React.FC = () => {
             />
             {` ${LABELS.UI.HEATMAP_LAYER} (🌡️ 犯罪密度)`}
           </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={showBoundaries}
+              onChange={() => setShowBoundaries(prev => !prev)}
+            />
+            {` 🗾 エリア境界表示`}
+          </label>
         </div>
+
+        {/* Enhanced Map Controls */}
+        <EnhancedMapControls
+          settings={mapSettings}
+          onSettingsChange={setMapSettings}
+          onZoomToFit={() => {
+            if (map && (filteredSchools.length > 0 || filteredCrimes.length > 0)) {
+              const allMarkers: any[] = [];
+              filteredSchools.forEach(school => {
+                if (school.latitude && school.longitude) {
+                  allMarkers.push(L.marker([school.latitude, school.longitude]));
+                }
+              });
+              filteredCrimes.forEach(crime => {
+                if (crime.latitude && crime.longitude) {
+                  allMarkers.push(L.marker([crime.latitude, crime.longitude]));
+                }
+              });
+              if (allMarkers.length > 0) {
+                const group = L.featureGroup(allMarkers);
+                map.fitBounds(group.getBounds().pad(0.1));
+              }
+            }
+          }}
+          onResetView={() => {
+            if (map) {
+              map.setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
+            }
+          }}
+        />
 
         {/* Search and Filter controls */}
         <div className="search-filters">
@@ -921,6 +1189,30 @@ const App: React.FC = () => {
               <span className="auto-display-indicator" style={{fontSize: '10px', marginLeft: '6px', opacity: 0.7}}>(自動表示)</span>
             )}
           </button>
+
+          {/* Area Comparison toggle button */}
+          <button 
+            onClick={handleToggleComparison} 
+            className="toggle-comparison-btn" 
+            style={{marginTop: '10px', width: '100%'}}
+          >
+            {showComparison ? '📊 Hide Comparison' : '📊 Show Area Comparison'}
+            {comparisonData.length > 0 && (
+              <span style={{fontSize: '10px', marginLeft: '6px', opacity: 0.8}}>({comparisonData.length} areas)</span>
+            )}
+          </button>
+
+          {/* Time Series Analysis toggle button */}
+          <button 
+            onClick={handleToggleTimeSeries} 
+            className="toggle-timeseries-btn" 
+            style={{marginTop: '10px', width: '100%'}}
+          >
+            {showTimeSeries ? '📈 Hide Time Series' : '📈 Show Time Series Analysis'}
+            {filteredCrimes.length > 0 && (
+              <span style={{fontSize: '10px', marginLeft: '6px', opacity: 0.8}}>({filteredCrimes.length} crimes)</span>
+            )}
+          </button>
         </div>
 
         {/* Statistics Dashboard */}
@@ -976,7 +1268,7 @@ const App: React.FC = () => {
             )}
             
             {/* School type chart */}
-            {Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k] > 0) && (
+            {Object.keys(statisticsData.schoolTypeDistribution).some(k => statisticsData.schoolTypeDistribution[k as School['type']] > 0) && (
               <div className="chart-container">
                 <h4 style={{margin: '0 0 15px 0', color: '#333', fontSize: '14px', textAlign: 'center'}}>
                   {LABELS.UI.SCHOOL_TYPE_STATS}
@@ -989,6 +1281,23 @@ const App: React.FC = () => {
               </div>
             )}
           </div>
+        )}
+
+        {/* Area Comparison Component */}
+        {showComparison && comparisonData.length > 0 && (
+          <AreaComparison
+            areas={comparisonData}
+            onExportCSV={handleExportComparisonCSV}
+            maxAreasToCompare={4}
+          />
+        )}
+
+        {/* Time Series Analysis Component */}
+        {showTimeSeries && filteredCrimes.length > 0 && (
+          <TimeSeriesAnalysis
+            crimes={filteredCrimes}
+            areaName={selectedArea?.name}
+          />
         )}
 
         {/* Area selection */}
@@ -1016,6 +1325,26 @@ const App: React.FC = () => {
               {`${LABELS.UI.SELECTED_PREFIX}${selectedArea.name}`}
             </h3>
             <p>学校: {filteredSchools.length}件 | 犯罪: {filteredCrimes.length}件</p>
+            {calculatedSafetyScores.length > 0 && (
+              <div style={{marginTop: '12px', padding: '10px', background: '#f0f7ff', borderRadius: '4px', border: '1px solid #bae7ff'}}>
+                <h4 style={{margin: '0 0 8px 0', fontSize: '13px', color: '#1890ff'}}>
+                  Safety Score Summary
+                </h4>
+                <div style={{fontSize: '12px', color: '#555'}}>
+                  <div>計算済み: {calculatedSafetyScores.length} / {schools.length}校</div>
+                  <div>平均スコア: {(calculatedSafetyScores.reduce((sum, s) => sum + s.score, 0) / calculatedSafetyScores.length).toFixed(1)}</div>
+                  <div>総犯罪件数: {calculatedSafetyScores.reduce((sum, s) => sum + s.crime_count, 0)}件</div>
+                  <div style={{marginTop: '6px'}}>
+                    <span style={{color: '#52c41a', marginRight: '8px'}}>Very Safe: {calculatedSafetyScores.filter(s => s.score_level === 'very_safe').length}</span>
+                    <span style={{color: '#73d13d', marginRight: '8px'}}>Safe: {calculatedSafetyScores.filter(s => s.score_level === 'safe').length}</span>
+                  </div>
+                  <div>
+                    <span style={{color: '#faad14', marginRight: '8px'}}>Moderate: {calculatedSafetyScores.filter(s => s.score_level === 'moderate').length}</span>
+                    <span style={{color: '#ff4d4f'}}>Caution: {calculatedSafetyScores.filter(s => s.score_level === 'caution').length}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1038,6 +1367,11 @@ const App: React.FC = () => {
         .map {
           flex: 1;
           height: 100vh;
+          position: relative;
+          transition: opacity 0.3s ease-in-out;
+        }
+        .map.transitioning {
+          opacity: 0.7;
         }
         .loading {
           text-align: center;
@@ -1160,7 +1494,7 @@ const App: React.FC = () => {
         .range-slider {
           flex: 1;
         }
-        .clear-filters-btn, .toggle-statistics-btn, .export-btn {
+        .clear-filters-btn, .toggle-statistics-btn, .toggle-comparison-btn, .export-btn {
           background: #1890ff;
           color: white;
           border: none;
@@ -1169,9 +1503,29 @@ const App: React.FC = () => {
           cursor: pointer;
           font-size: 14px;
           margin: 5px 0;
+          font-weight: 500;
+          transition: all 0.2s ease;
+        }
+        .toggle-comparison-btn {
+          background: #722ed1;
+        }
+        .toggle-comparison-btn:hover {
+          background: #9254de;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(114, 46, 209, 0.3);
+        }
+        .toggle-timeseries-btn {
+          background: #13c2c2;
+        }
+        .toggle-timeseries-btn:hover {
+          background: #36cfc9;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(19, 194, 194, 0.3);
         }
         .clear-filters-btn:hover, .toggle-statistics-btn:hover, .export-btn:hover {
           background: #40a9ff;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
         }
         .filter-results {
           font-size: 12px;
@@ -1327,6 +1681,24 @@ const App: React.FC = () => {
             opacity: 1;
             max-height: 1000px;
           }
+        }
+        /* Ward tooltips and boundaries */
+        .ward-tooltip {
+          background: rgba(24, 144, 255, 0.9);
+          border: none;
+          border-radius: 4px;
+          color: white;
+          font-weight: 600;
+          font-size: 12px;
+          padding: 4px 8px;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+        .leaflet-popup-content-wrapper {
+          border-radius: 8px;
+          padding: 0;
+        }
+        .leaflet-popup-content {
+          margin: 0;
         }
       `}</style>
     </div>
