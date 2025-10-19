@@ -204,3 +204,42 @@ check-priority3: ## Priority 3区データ確認
 		WHERE a.ward_code IN ('13107', '13108', '13109', '13110') \
 		GROUP BY ward_code ORDER BY ward_code;"
 	@echo "データ確認完了"
+
+# Phase 3データ投入（最新版）
+load-priority3: ## Priority 3区データ投入（墨田・江東・品川・目黒）
+	@echo "Priority 3区データ投入開始..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping < sql/districts/priority3/load_all_priority3.sql
+	@echo "Priority 3区データ投入完了"
+
+load-sumida: ## 墨田区データのみ投入
+	@echo "墨田区データ投入中..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping < sql/districts/priority3/sumida_district_data.sql
+	@echo "墨田区データ投入完了"
+
+load-koto: ## 江東区データのみ投入
+	@echo "江東区データ投入中..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping < sql/districts/priority3/koto_district_data.sql
+	@echo "江東区データ投入完了"
+
+load-shinagawa: ## 品川区データのみ投入
+	@echo "品川区データ投入中..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping < sql/districts/priority3/shinagawa_district_data.sql
+	@echo "品川区データ投入完了"
+
+load-meguro: ## 目黒区データのみ投入
+	@echo "目黒区データ投入中..."
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping < sql/districts/priority3/meguro_district_data.sql
+	@echo "目黒区データ投入完了"
+
+verify-priority3: ## Priority 3区データ検証
+	@echo "Priority 3区データ検証中..."
+	@echo "========================================"
+	@echo "全体統計"
+	@echo "========================================"
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -c "SELECT COUNT(DISTINCT ward_code) as total_wards, COUNT(DISTINCT s.id) as total_schools, COUNT(DISTINCT c.id) as total_crimes FROM areas a LEFT JOIN schools s ON s.area_id = a.id LEFT JOIN crimes c ON c.area_id = a.id;"
+	@echo ""
+	@echo "========================================"
+	@echo "Priority 3区別統計"
+	@echo "========================================"
+	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -c "SELECT a.ward_code, CASE WHEN a.ward_code = '13107' THEN '墨田区' WHEN a.ward_code = '13108' THEN '江東区' WHEN a.ward_code = '13109' THEN '品川区' WHEN a.ward_code = '13110' THEN '目黒区' END as ward_name, COUNT(DISTINCT a.id) as areas, COUNT(DISTINCT s.id) as schools, COUNT(DISTINCT c.id) as crimes FROM areas a LEFT JOIN schools s ON s.area_id = a.id LEFT JOIN crimes c ON c.area_id = a.id WHERE a.ward_code IN ('13107', '13108', '13109', '13110') GROUP BY a.ward_code ORDER BY a.ward_code;"
+	@echo "検証完了"
