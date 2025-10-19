@@ -23,6 +23,7 @@ import { generateCSVData, generatePDFReport, downloadCSV } from './utils/export'
 import EnhancedMapControls from './components/EnhancedMapControls';
 import AreaComparison from './components/AreaComparison';
 import TimeSeriesAnalysis from './components/TimeSeriesAnalysis';
+import SafeRouteSearch from './components/SafeRouteSearch';
 import { generateAreaComparisonData, downloadAreaComparisonCSV } from './utils/areaComparison';
 import { loadGeoJSON, createGeoJSONLayer, highlightArea, fitToAreaBounds, createAreaStatsOverlay } from './utils/geojson';
 import type { AreaComparisonData } from './types';
@@ -109,6 +110,9 @@ const App: React.FC = () => {
 
   // Time Series Analysis
   const [showTimeSeries, setShowTimeSeries] = useState<boolean>(false);
+
+  // Safe Route Search
+  const [showRouteSearch, setShowRouteSearch] = useState<boolean>(false);
 
   // GeoJSON Boundaries
   const [geojsonData, setGeojsonData] = useState<GeoJSONFeatureCollection | null>(null);
@@ -938,6 +942,11 @@ const App: React.FC = () => {
     setShowTimeSeries(prev => !prev);
   };
 
+  // Route search handler
+  const handleToggleRouteSearch = () => {
+    setShowRouteSearch(prev => !prev);
+  };
+
 
 
   // ========== レンダリング ==========
@@ -1213,6 +1222,18 @@ const App: React.FC = () => {
               <span style={{fontSize: '10px', marginLeft: '6px', opacity: 0.8}}>({filteredCrimes.length} crimes)</span>
             )}
           </button>
+
+          {/* Safe Route Search toggle button */}
+          <button 
+            onClick={handleToggleRouteSearch} 
+            className="toggle-route-btn" 
+            style={{marginTop: '10px', width: '100%'}}
+          >
+            {showRouteSearch ? '🚶 Hide Route Search' : '🚶 Safe Route Search'}
+            {schools.length > 0 && (
+              <span style={{fontSize: '10px', marginLeft: '6px', opacity: 0.8}}>({schools.length} schools)</span>
+            )}
+          </button>
         </div>
 
         {/* Statistics Dashboard */}
@@ -1297,6 +1318,16 @@ const App: React.FC = () => {
           <TimeSeriesAnalysis
             crimes={filteredCrimes}
             areaName={selectedArea?.name}
+          />
+        )}
+
+        {/* Safe Route Search Component */}
+        {showRouteSearch && map && L && (
+          <SafeRouteSearch
+            schools={filteredSchools}
+            crimes={filteredCrimes}
+            map={map}
+            L={L}
           />
         )}
 
@@ -1521,6 +1552,14 @@ const App: React.FC = () => {
           background: #36cfc9;
           transform: translateY(-1px);
           box-shadow: 0 2px 8px rgba(19, 194, 194, 0.3);
+        }
+        .toggle-route-btn {
+          background: #52c41a;
+        }
+        .toggle-route-btn:hover {
+          background: #73d13d;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(82, 196, 26, 0.3);
         }
         .clear-filters-btn:hover, .toggle-statistics-btn:hover, .export-btn:hover {
           background: #40a9ff;
