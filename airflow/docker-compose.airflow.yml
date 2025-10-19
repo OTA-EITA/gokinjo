@@ -17,6 +17,8 @@ x-airflow-common:
     TZ: 'Asia/Tokyo'
     # アプリケーション用データベース接続情報 (host.docker.internal経由)
     APP_DATABASE_URL: 'postgresql://postgres:password@host.docker.internal:5432/neighborhood_mapping'
+    # PostgreSQL接続設定（環境変数経由）
+    AIRFLOW_CONN_POSTGRES_DEFAULT: 'postgresql://postgres:password@host.docker.internal:5432/neighborhood_mapping'
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
