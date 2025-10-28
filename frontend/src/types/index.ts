@@ -60,6 +60,9 @@ export interface FilterState {
 }
 
 export interface StatisticsData {
+  totalSchools: number;
+  totalCrimes: number;
+  averageSafetyScore: number;
   crimeByCategory: Record<string, number>;
   safetyScoreDistribution: Record<string, number>;
   crimeTrends: { date: string; count: number }[];

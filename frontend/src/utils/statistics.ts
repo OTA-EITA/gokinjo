@@ -51,7 +51,17 @@ export const calculateStatistics = (schools: School[], crimes: Crime[], safetySc
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  // 基本統計
+  const totalSchools = schools.length;
+  const totalCrimes = crimes.length;
+  const averageSafetyScore = safetyScores.length > 0
+    ? safetyScores.reduce((sum, score) => sum + score.score, 0) / safetyScores.length
+    : 0;
+
   return {
+    totalSchools,
+    totalCrimes,
+    averageSafetyScore,
     crimeByCategory,
     safetyScoreDistribution,
     crimeTrends,

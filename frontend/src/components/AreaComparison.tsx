@@ -109,7 +109,7 @@ const AreaComparison: React.FC<AreaComparisonProps> = ({
         }
       });
     };
-  }, [selectedAreas, showCharts]);
+  }, [selectedAreas, showCharts, chartInstances]);
 
   const handleExportSelected = () => {
     onExportCSV(selectedAreas.length > 0 ? selectedAreas : areas);

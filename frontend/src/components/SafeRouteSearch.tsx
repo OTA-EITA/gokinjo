@@ -5,7 +5,6 @@ interface RoutePoint {
   lat: number;
   lng: number;
   label: string;
-  type: 'start' | 'end' | 'waypoint';
 }
 
 interface SafeRoute {
@@ -47,15 +46,13 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
         setStartPoint({
           lat: e.latlng.lat,
           lng: e.latlng.lng,
-          label: '出発地',
-          type: 'start'
+          label: '出発地'
         });
       } else if (!endPoint) {
         setEndPoint({
           lat: e.latlng.lat,
           lng: e.latlng.lng,
-          label: '目的地',
-          type: 'end'
+          label: '目的地'
         });
       }
     };
@@ -110,7 +107,7 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
         map.removeLayer(markersLayer);
       }
     };
-  }, [map, L, startPoint, endPoint]);
+  }, [map, L, startPoint, endPoint, markersLayer]);
 
   // 学校選択ハンドラー
   const handleSchoolSelect = (schoolId: string) => {
@@ -120,8 +117,7 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
       setEndPoint({
         lat: school.latitude,
         lng: school.longitude,
-        label: school.name,
-        type: 'end'
+        label: school.name
       });
     }
   };
@@ -143,8 +139,7 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
       const route = computeSafeRoute(
         startPoint,
         endPoint,
-        crimeHotspots,
-        routeType
+        crimeHotspots
       );
 
       setCalculatedRoute(route);
@@ -179,8 +174,7 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
   const computeSafeRoute = (
     start: RoutePoint,
     end: RoutePoint,
-    crimeHotspots: Map<string, number>,
-    type: 'safest' | 'fastest' | 'balanced'
+    crimeHotspots: Map<string, number>
   ): SafeRoute => {
     // 簡易版: 直線ルートで犯罪密度を評価
     const path: [number, number][] = [];

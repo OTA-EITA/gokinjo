@@ -1,5 +1,3 @@
-import { Area } from '../types';
-
 /**
  * GeoJSON FeatureCollection type
  */
@@ -75,7 +73,7 @@ export const createGeoJSONLayer = (
         const layer = e.target;
         layer.setStyle(defaultStyle(feature));
       },
-      click: (e: any) => {
+      click: () => {
         // Will be handled by custom click handler
       }
     });
@@ -156,7 +154,7 @@ export const highlightArea = (layer: any, highlight: boolean = true) => {
 /**
  * Fit map to area bounds
  */
-export const fitToAreaBounds = (map: any, layer: any, padding: number = 0.1) => {
+export const fitToAreaBounds = (map: any, layer: any) => {
   const bounds = layer.getBounds();
   map.fitBounds(bounds, { padding: [50, 50] });
 };

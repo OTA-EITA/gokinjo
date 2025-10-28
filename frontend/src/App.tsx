@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Area, School, Crime, SafetyScore, LayerState, FilterState, StatisticsData, MapControlSettings
 } from './types';
@@ -162,11 +162,14 @@ const App: React.FC = () => {
       const layer = createGeoJSONLayer(L, geojsonData, {
         onEachFeature: (feature, layer) => {
           // Custom click handler
-          layer.on('click', (e: any) => {
+          layer.on('click', () => {
             const wardCode = feature.properties.ward_code;
             const area = areas.find(a => a.ward_code === wardCode);
             if (area) {
-              handleAreaClick(area);
+              setSelectedArea(area);
+              setShowStatistics(true);
+              setChartsInitialized(false);
+              loadAreaData(area.ward_code, area.town_code);
               fitToAreaBounds(map, layer);
             }
           });
@@ -216,6 +219,205 @@ const App: React.FC = () => {
     }
   }, [map, geojsonData, showBoundaries, areas, schools, crimes, calculatedSafetyScores]);
 
+  // ========== コア機能 (早期定義が必要な関数) ==========
+  
+  /**
+   * 地図上にデータを表示
+   */
+  const displayDataOnMap = useCallback((): void => {
+    if (!map) return;
+
+    // Clear existing markers
+    [schoolMarkers, crimeMarkers, safetyCircles, heatmapLayer].forEach(layer => {
+      if (layer && map.hasLayer(layer)) {
+        map.removeLayer(layer);
+      }
+    });
+    setSchoolMarkers(null);
+    setCrimeMarkers(null);
+    setSafetyCircles(null);
+    setHeatmapLayer(null);
+
+    // School markers with clustering
+    if (layerState.showSchools && filteredSchools.length > 0) {
+      const schoolMarkersGroup = L.markerClusterGroup({
+        maxClusterRadius: 50,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        iconCreateFunction: function(cluster: any) {
+          const childCount = cluster.getChildCount();
+          let className = 'marker-cluster marker-cluster-';
+          if (childCount < 5) {
+            className += 'small';
+          } else if (childCount < 10) {
+            className += 'medium';
+          } else {
+            className += 'large';
+          }
+          return L.divIcon({
+            html: '<div><span>' + childCount + '</span></div>',
+            className: className,
+            iconSize: L.point(40, 40)
+          });
+        }
+      });
+
+      filteredSchools.forEach((school: School) => {
+        if (school.latitude && school.longitude) {
+          const calculatedScore = calculatedSafetyScores.find((s: SafetyScoreResult) => s.school_id === school.id);
+          const apiScore = filteredSafetyScores.find((s: SafetyScore) => s.school_id === school.id);
+          
+          let scoreText = '';
+          if (calculatedScore) {
+            scoreText = `<br/><strong>安全スコア: ${calculatedScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(calculatedScore.score_level)})`
+              + `<br/>周辺犯罪: ${calculatedScore.crime_count}件`
+              + `<br/>犯罪密度: ${calculatedScore.crime_density.toFixed(2)}/km²`;
+          } else if (apiScore) {
+            scoreText = `<br/><strong>安全スコア: ${apiScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(apiScore.score_level)})`;
+          }
+
+          const icon = L.icon({
+            iconUrl: getSchoolIcon(school),
+            iconSize: ICON_CONFIG.SIZES.SCHOOL,
+            iconAnchor: ICON_CONFIG.SIZES.ANCHOR_SCHOOL,
+            popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR
+          });
+
+          const marker = L.marker([school.latitude, school.longitude], { icon })
+            .bindPopup(`
+              <div>
+                <strong>${school.name}</strong><br/>
+                種別: ${getSchoolTypeLabel(school.type)}<br/>
+                ${getPublicPrivateLabel(school.public_private)}<br/>
+                住所: ${school.address}${scoreText}
+              </div>
+            `);
+
+          schoolMarkersGroup.addLayer(marker);
+        }
+      });
+
+      schoolMarkersGroup.addTo(map);
+      setSchoolMarkers(schoolMarkersGroup);
+    }
+
+    // Crime markers with clustering  
+    if (layerState.showCrimes && filteredCrimes.length > 0) {
+      const crimeMarkersGroup = L.markerClusterGroup({
+        maxClusterRadius: 30,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        iconCreateFunction: function(cluster: any) {
+          const childCount = cluster.getChildCount();
+          return L.divIcon({
+            html: '<div><span>' + childCount + '</span></div>',
+            className: 'marker-cluster marker-cluster-crime',
+            iconSize: L.point(35, 35)
+          });
+        }
+      });
+
+      filteredCrimes.forEach((crime: Crime) => {
+        if (crime.latitude && crime.longitude) {
+          const icon = L.icon({
+            iconUrl: getCrimeIcon(crime),
+            iconSize: ICON_CONFIG.SIZES.CRIME,
+            iconAnchor: ICON_CONFIG.SIZES.ANCHOR_CRIME,
+            popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR_CRIME
+          });
+
+          const marker = L.marker([crime.latitude, crime.longitude], { icon })
+            .bindPopup(`
+              <div>
+                <strong>${crime.category}</strong><br/>
+                日付: ${crime.date}<br/>
+                詳細: ${crime.description}
+              </div>
+            `);
+
+          crimeMarkersGroup.addLayer(marker);
+        }
+      });
+
+      crimeMarkersGroup.addTo(map);
+      setCrimeMarkers(crimeMarkersGroup);
+    }
+
+    // Safety score circles
+    if (layerState.showSafetyScores && filteredSafetyScores.length > 0) {
+      const safetyCirclesGroup = L.layerGroup();
+
+      filteredSafetyScores.forEach((score: SafetyScore) => {
+        const school = filteredSchools.find((s: School) => s.id === score.school_id);
+        if (school && school.latitude && school.longitude) {
+          const circle = L.circle([school.latitude, school.longitude], {
+            color: getSafetyScoreColor(score.score),
+            fillColor: getSafetyScoreColor(score.score),
+            fillOpacity: SAFETY_CONFIG.CIRCLE_STYLE.fillOpacity,
+            weight: SAFETY_CONFIG.CIRCLE_STYLE.weight,
+            radius: score.radius_meters
+          }).bindPopup(`
+            <div>
+              <strong>${school.name}</strong><br/>
+              安全スコア: ${score.score.toFixed(1)}<br/>
+              周辺犯罪件数: ${score.crime_count}件<br/>
+              調査範囲: 半径${score.radius_meters}m
+            </div>
+          `);
+
+          safetyCirclesGroup.addLayer(circle);
+        }
+      });
+
+      safetyCirclesGroup.addTo(map);
+      setSafetyCircles(safetyCirclesGroup);
+    }
+
+    // Heatmap layer
+    if (layerState.showHeatmap && filteredCrimes.length > 0) {
+      const heatmapData = prepareHeatmapData(filteredCrimes);
+      
+      if (heatmapData.length > 0 && window.L && window.L.heatLayer) {
+        const heatLayer = window.L.heatLayer(heatmapData, {
+          radius: HEATMAP_CONFIG.RADIUS,
+          blur: HEATMAP_CONFIG.BLUR,
+          maxZoom: HEATMAP_CONFIG.MAX_ZOOM,
+          max: HEATMAP_CONFIG.MAX_INTENSITY,
+          gradient: HEATMAP_CONFIG.GRADIENT
+        });
+        
+        heatLayer.addTo(map);
+        setHeatmapLayer(heatLayer);
+      } else {
+        console.warn('ヒートマップライブラリが読み込まれていません');
+      }
+    }
+
+    // Fit map to show all data
+    const allMarkers: any[] = [];
+    if (layerState.showSchools && filteredSchools.length > 0) {
+      filteredSchools.forEach((school: School) => {
+        if (school.latitude && school.longitude) {
+          allMarkers.push(L.marker([school.latitude, school.longitude]));
+        }
+      });
+    }
+    if (layerState.showCrimes && filteredCrimes.length > 0) {
+      filteredCrimes.forEach((crime: Crime) => {
+        if (crime.latitude && crime.longitude) {
+          allMarkers.push(L.marker([crime.latitude, crime.longitude]));
+        }
+      });
+    }
+
+    if (allMarkers.length > 0) {
+      const group = L.featureGroup(allMarkers);
+      map.fitBounds(group.getBounds().pad(MAP_CONFIG.FIT_BOUNDS_PADDING));
+    }
+  }, [map, layerState, filteredSchools, filteredCrimes, filteredSafetyScores, calculatedSafetyScores, schoolMarkers, crimeMarkers, safetyCircles, heatmapLayer]);
+
   // ========== Effect フック ==========
   useEffect(() => {
     // Leafletとプラグインが読み込まれてから初期化
@@ -237,7 +439,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     displayDataOnMap();
-  }, [filteredSchools, filteredCrimes, filteredSafetyScores, layerState, map]);
+  }, [displayDataOnMap]);
 
   // Auto-calculate safety scores when schools and crimes are loaded
   useEffect(() => {
@@ -284,7 +486,7 @@ const App: React.FC = () => {
     if (showStatistics) {
       setChartsInitialized(false);
     }
-  }, [areas, schools, crimes, safetyScores, filterState]);
+  }, [areas, schools, crimes, safetyScores, filterState, showStatistics]);
 
   // Chart.js 安全初期化 - 統計データが更新されるたびに再初期化
   useEffect(() => {
@@ -326,7 +528,7 @@ const App: React.FC = () => {
     return () => {
       clearTimeout(timer);
     };
-  }, [showStatistics, statisticsData]); // 依存配列をシンプルに
+  }, [showStatistics, statisticsData, chartInstances]); // initializeChartsは内部関数なので依存配列に含めない
 
   // Map tile layer switching
   useEffect(() => {
@@ -349,7 +551,7 @@ const App: React.FC = () => {
     setCurrentTileLayer(newTileLayer);
 
     console.log(`Map style changed to: ${mapSettings.map_mode}`);
-  }, [map, mapSettings.map_mode, mapSettings.animation_enabled]);
+  }, [map, mapSettings.map_mode, mapSettings.animation_enabled, currentTileLayer]);
 
   // ========== コア機能 ==========
   
@@ -513,210 +715,12 @@ const App: React.FC = () => {
     }
   };
 
-  /**
-   * 地図上にデータを表示
-   */
-  const displayDataOnMap = (): void => {
-    if (!map) return;
-
-    // Clear existing markers
-    [schoolMarkers, crimeMarkers, safetyCircles, heatmapLayer].forEach(layer => {
-      if (layer && map.hasLayer(layer)) {
-        map.removeLayer(layer);
-      }
-    });
-    setSchoolMarkers(null);
-    setCrimeMarkers(null);
-    setSafetyCircles(null);
-    setHeatmapLayer(null);
-
-    // School markers with clustering
-    if (layerState.showSchools && filteredSchools.length > 0) {
-      const schoolMarkersGroup = L.markerClusterGroup({
-        maxClusterRadius: 50,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        iconCreateFunction: function(cluster: any) {
-          const childCount = cluster.getChildCount();
-          let className = 'marker-cluster marker-cluster-';
-          if (childCount < 5) {
-            className += 'small';
-          } else if (childCount < 10) {
-            className += 'medium';
-          } else {
-            className += 'large';
-          }
-          return L.divIcon({
-            html: '<div><span>' + childCount + '</span></div>',
-            className: className,
-            iconSize: L.point(40, 40)
-          });
-        }
-      });
-
-      filteredSchools.forEach((school: School) => {
-        if (school.latitude && school.longitude) {
-          // Use calculated safety score (priority) or API safety score
-          const calculatedScore = calculatedSafetyScores.find((s: SafetyScoreResult) => s.school_id === school.id);
-          const apiScore = filteredSafetyScores.find((s: SafetyScore) => s.school_id === school.id);
-          
-          let scoreText = '';
-          if (calculatedScore) {
-            scoreText = `<br/><strong>安全スコア: ${calculatedScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(calculatedScore.score_level)})`
-              + `<br/>周辺犯罪: ${calculatedScore.crime_count}件`
-              + `<br/>犯罪密度: ${calculatedScore.crime_density.toFixed(2)}/km²`;
-          } else if (apiScore) {
-            scoreText = `<br/><strong>安全スコア: ${apiScore.score.toFixed(1)}</strong> (${getSafetyLevelLabel(apiScore.score_level)})`;
-          }
-
-          const icon = L.icon({
-            iconUrl: getSchoolIcon(school),
-            iconSize: ICON_CONFIG.SIZES.SCHOOL,
-            iconAnchor: ICON_CONFIG.SIZES.ANCHOR_SCHOOL,
-            popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR
-          });
-
-          const marker = L.marker([school.latitude, school.longitude], { icon })
-            .bindPopup(`
-              <div>
-                <strong>${school.name}</strong><br/>
-                種別: ${getSchoolTypeLabel(school.type)}<br/>
-                ${getPublicPrivateLabel(school.public_private)}<br/>
-                住所: ${school.address}${scoreText}
-              </div>
-            `);
-
-          schoolMarkersGroup.addLayer(marker);
-        }
-      });
-
-      schoolMarkersGroup.addTo(map);
-      setSchoolMarkers(schoolMarkersGroup);
-    }
-
-    // Crime markers with clustering  
-    if (layerState.showCrimes && filteredCrimes.length > 0) {
-      const crimeMarkersGroup = L.markerClusterGroup({
-        maxClusterRadius: 30,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false,
-        zoomToBoundsOnClick: true,
-        iconCreateFunction: function(cluster: any) {
-          const childCount = cluster.getChildCount();
-          return L.divIcon({
-            html: '<div><span>' + childCount + '</span></div>',
-            className: 'marker-cluster marker-cluster-crime',
-            iconSize: L.point(35, 35)
-          });
-        }
-      });
-
-      filteredCrimes.forEach((crime: Crime) => {
-        if (crime.latitude && crime.longitude) {
-          const icon = L.icon({
-            iconUrl: getCrimeIcon(crime),
-            iconSize: ICON_CONFIG.SIZES.CRIME,
-            iconAnchor: ICON_CONFIG.SIZES.ANCHOR_CRIME,
-            popupAnchor: ICON_CONFIG.SIZES.POPUP_ANCHOR_CRIME
-          });
-
-          const marker = L.marker([crime.latitude, crime.longitude], { icon })
-            .bindPopup(`
-              <div>
-                <strong>${crime.category}</strong><br/>
-                日付: ${crime.date}<br/>
-                詳細: ${crime.description}
-              </div>
-            `);
-
-          crimeMarkersGroup.addLayer(marker);
-        }
-      });
-
-      crimeMarkersGroup.addTo(map);
-      setCrimeMarkers(crimeMarkersGroup);
-    }
-
-    // Safety score circles
-    if (layerState.showSafetyScores && filteredSafetyScores.length > 0) {
-      const safetyCirclesGroup = L.layerGroup();
-
-      filteredSafetyScores.forEach((score: SafetyScore) => {
-        const school = filteredSchools.find((s: School) => s.id === score.school_id);
-        if (school && school.latitude && school.longitude) {
-          const circle = L.circle([school.latitude, school.longitude], {
-            color: getSafetyScoreColor(score.score),
-            fillColor: getSafetyScoreColor(score.score),
-            fillOpacity: SAFETY_CONFIG.CIRCLE_STYLE.fillOpacity,
-            weight: SAFETY_CONFIG.CIRCLE_STYLE.weight,
-            radius: score.radius_meters
-          }).bindPopup(`
-            <div>
-              <strong>${school.name}</strong><br/>
-              安全スコア: ${score.score.toFixed(1)}<br/>
-              周辺犯罪件数: ${score.crime_count}件<br/>
-              調査範囲: 半径${score.radius_meters}m
-            </div>
-          `);
-
-          safetyCirclesGroup.addLayer(circle);
-        }
-      });
-
-      safetyCirclesGroup.addTo(map);
-      setSafetyCircles(safetyCirclesGroup);
-    }
-
-    // Heatmap layer
-    if (layerState.showHeatmap && filteredCrimes.length > 0) {
-      const heatmapData = prepareHeatmapData(filteredCrimes);
-      
-      if (heatmapData.length > 0 && window.L && window.L.heatLayer) {
-        const heatLayer = window.L.heatLayer(heatmapData, {
-          radius: HEATMAP_CONFIG.RADIUS,
-          blur: HEATMAP_CONFIG.BLUR,
-          maxZoom: HEATMAP_CONFIG.MAX_ZOOM,
-          max: HEATMAP_CONFIG.MAX_INTENSITY,
-          gradient: HEATMAP_CONFIG.GRADIENT
-        });
-        
-        heatLayer.addTo(map);
-        setHeatmapLayer(heatLayer);
-      } else {
-        console.warn('ヒートマップライブラリが読み込まれていません');
-      }
-    }
-
-    // Fit map to show all data
-    const allMarkers: any[] = [];
-    if (layerState.showSchools && filteredSchools.length > 0) {
-      filteredSchools.forEach((school: School) => {
-        if (school.latitude && school.longitude) {
-          allMarkers.push(L.marker([school.latitude, school.longitude]));
-        }
-      });
-    }
-    if (layerState.showCrimes && filteredCrimes.length > 0) {
-      filteredCrimes.forEach((crime: Crime) => {
-        if (crime.latitude && crime.longitude) {
-          allMarkers.push(L.marker([crime.latitude, crime.longitude]));
-        }
-      });
-    }
-
-    if (allMarkers.length > 0) {
-      const group = L.featureGroup(allMarkers);
-      map.fitBounds(group.getBounds().pad(MAP_CONFIG.FIT_BOUNDS_PADDING));
-    }
-  };
-
   // ========== イベントハンドラ ==========
 
   /**
    * エリアクリックハンドラ
    */
-  const handleAreaClick = (area: Area): void => {
+  const handleAreaClick = useCallback((area: Area): void => {
     setSelectedArea(area);
     
     // 統計ダッシュボードを自動表示（データ読み込み前に表示開始）
@@ -727,7 +731,7 @@ const App: React.FC = () => {
     
     // データ読み込み開始
     loadAreaData(area.ward_code, area.town_code);
-  };
+  }, []);
 
   /**
    * レイヤー表示切替ハンドラ
