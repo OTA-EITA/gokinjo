@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, Dispatch, SetStateAction } from 'react';
 import type { Area, School, LayerState, FilterState } from '../types';
 
 interface UseOptimizedCallbacksProps {
@@ -6,8 +6,8 @@ interface UseOptimizedCallbacksProps {
   setShowStatistics: (show: boolean) => void;
   setChartsInitialized: (initialized: boolean) => void;
   loadAreaData: (wardCode: string, townCode: string) => Promise<void>;
-  setLayerState: React.Dispatch<React.SetStateAction<LayerState>>;
-  setFilterState: React.Dispatch<React.SetStateAction<FilterState>>;
+  setLayerState: Dispatch<SetStateAction<LayerState>>;
+  setFilterState: Dispatch<SetStateAction<FilterState>>;
   setShowFilters: (show: boolean) => void;
   setShowComparison: (show: boolean) => void;
   setShowTimeSeries: (show: boolean) => void;
