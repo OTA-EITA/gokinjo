@@ -69,7 +69,7 @@ const TimeSeriesAnalysis: React.FC<TimeSeriesAnalysisProps> = ({ crimes, areaNam
         }
       });
     };
-  }, [crimes, showAnalysis]);
+  }, [crimes, showAnalysis, chartInstances]);
 
   if (crimes.length === 0) {
     return (

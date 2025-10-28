@@ -107,7 +107,7 @@ const SafeRouteSearch: React.FC<SafeRouteSearchProps> = ({
         map.removeLayer(markersLayer);
       }
     };
-  }, [map, L, startPoint, endPoint]);
+  }, [map, L, startPoint, endPoint, markersLayer]);
 
   // 学校選択ハンドラー
   const handleSchoolSelect = (schoolId: string) => {
