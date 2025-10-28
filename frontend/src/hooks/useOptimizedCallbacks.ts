@@ -3,15 +3,15 @@ import type { Area, School, LayerState, FilterState } from '../types';
 
 interface UseOptimizedCallbacksProps {
   setSelectedArea: (area: Area | null) => void;
-  setShowStatistics: (show: boolean) => void;
+  setShowStatistics: Dispatch<SetStateAction<boolean>>;
   setChartsInitialized: (initialized: boolean) => void;
   loadAreaData: (wardCode: string, townCode: string) => Promise<void>;
   setLayerState: Dispatch<SetStateAction<LayerState>>;
   setFilterState: Dispatch<SetStateAction<FilterState>>;
-  setShowFilters: (show: boolean) => void;
-  setShowComparison: (show: boolean) => void;
-  setShowTimeSeries: (show: boolean) => void;
-  setShowRouteSearch: (show: boolean) => void;
+  setShowFilters: Dispatch<SetStateAction<boolean>>;
+  setShowComparison: Dispatch<SetStateAction<boolean>>;
+  setShowTimeSeries: Dispatch<SetStateAction<boolean>>;
+  setShowRouteSearch: Dispatch<SetStateAction<boolean>>;
   generateCSVData: (schools: School[], crimes: any[], safetyScores: any[]) => string;
   downloadCSV: (csvContent: string) => void;
   generatePDFReport: (statisticsData: any, areaName: string) => void;

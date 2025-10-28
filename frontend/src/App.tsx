@@ -162,7 +162,7 @@ const App: React.FC = () => {
       const layer = createGeoJSONLayer(L, geojsonData, {
         onEachFeature: (feature, layer) => {
           // Custom click handler
-          layer.on('click', (e: any) => {
+          layer.on('click', () => {
             const wardCode = feature.properties.ward_code;
             const area = areas.find(a => a.ward_code === wardCode);
             if (area) {
