@@ -149,11 +149,26 @@ jobs:
 
       - name: Auto commit daily marker (evening)
         run: |
+          set -x
           echo "evening_run=$(date -u)" > data/evening_run.txt
+          git status
           git add data/evening_run.txt
           git commit -m "auto: evening quality check run $(date -u)" || echo "No changes to commit"
-          git pull --rebase origin master || echo "No rebase needed"
-          git push origin master || echo "Push skipped"
+
+          echo "--- Before rebase ---"
+          git log --oneline -5
+          git remote -v
+          git fetch origin master || echo "Fetch failed"
+          git rebase origin/master || echo "No rebase needed"
+
+          echo "--- After rebase ---"
+          git log --oneline -5
+
+          git push origin master || (
+            echo "Push failed, showing diff..."
+            git diff origin/master..HEAD || true
+            exit 1
+          )
 
       - name: Get current date
         id: date
