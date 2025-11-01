@@ -12,6 +12,11 @@ permissions:
   pull-requests: write
   security-events: write
 
+# 同時実行による push 衝突防止
+concurrency:
+  group: quality-check
+  cancel-in-progress: false
+
 jobs:
 
   # ====================================================================
@@ -149,7 +154,7 @@ jobs:
           git commit -m "auto: evening quality check run $(date -u)" || echo "No changes to commit"
           git pull --rebase origin master || echo "No rebase needed"
           git push origin master || echo "Push skipped"
-        
+
       - name: Get current date
         id: date
         run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
