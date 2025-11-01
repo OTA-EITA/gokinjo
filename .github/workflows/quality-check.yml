@@ -149,26 +149,34 @@ jobs:
 
       - name: Auto commit daily marker (evening)
         run: |
+          set -e
           set -x
+
           echo "evening_run=$(date -u)" > data/evening_run.txt
-          git status
           git add data/evening_run.txt
           git commit -m "auto: evening quality check run $(date -u)" || echo "No changes to commit"
 
-          echo "--- Before rebase ---"
-          git log --oneline -5
-          git remote -v
-          git fetch origin master || echo "Fetch failed"
-          git rebase origin/master || echo "No rebase needed"
+          echo "--- Fetching latest from origin/master ---"
+          git fetch origin master
 
-          echo "--- After rebase ---"
+          echo "--- Rebasing current branch onto origin/master ---"
+          git rebase origin/master || {
+            echo "Rebase conflict detected. Aborting rebase."
+            git rebase --abort || true
+            echo "Retrying merge instead..."
+            git merge origin/master --strategy-option=ours || true
+          }
+
+          echo "--- Verifying final commit log ---"
           git log --oneline -5
 
-          git push origin master || (
-            echo "Push failed, showing diff..."
-            git diff origin/master..HEAD || true
-            exit 1
-          )
+          echo "--- Pushing with rebase result ---"
+          git push origin HEAD:master || {
+            echo "Push failed even after rebase, forcing safe fast-forward."
+            git pull --rebase origin master || true
+            git push origin HEAD:master
+          }
+
 
       - name: Get current date
         id: date
