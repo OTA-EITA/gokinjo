@@ -3,5 +3,7 @@ export { useDataFetch } from './useDataFetch';
 export { useSafetyScores } from './useSafetyScores';
 export { useFilters } from './useFilters';
 export { useCharts } from './useCharts';
+export { useMapDisplay } from './useMapDisplay';
+export { useGeoJSON } from './useGeoJSON';
 export { useMemoizedData } from './useMemoizedData';
 export { useOptimizedCallbacks } from './useOptimizedCallbacks';
