@@ -27,6 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Morning Quality Check (Lighthouse)
 
+    env:
+      LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,18 +56,32 @@ jobs:
           npm install -g @lhci/cli
           npx lhci autorun || echo "Lighthouse run completed with warnings"
 
-      - name: Configure git user from secrets
+      - name: Configure git user
         run: |
           git config --local user.name "${{ secrets.GIT_USER_NAME }}"
           git config --local user.email "${{ secrets.GIT_USER_EMAIL }}"
 
       - name: Auto commit daily marker (morning)
         run: |
+          set -e
+          set -x
+
           echo "morning_run=$(date -u)" > data/morning_run.txt
           git add data/morning_run.txt
           git commit -m "auto: morning quality check run $(date -u)" || echo "No changes to commit"
-          git pull --rebase origin master || echo "No rebase needed"
-          git push origin master || echo "Push skipped"
+
+          git fetch origin master
+          git rebase origin/master || {
+            echo "Rebase conflict detected. Aborting rebase."
+            git rebase --abort || true
+            git merge origin/master --strategy-option=ours || true
+          }
+
+          git push origin HEAD:master || {
+            echo "Push failed, retrying with rebase."
+            git pull --rebase origin master || true
+            git push origin HEAD:master
+          }
 
       - name: Get current date
         id: date
@@ -78,7 +95,7 @@ jobs:
             const issueBody = `## 朝の品質チェックレポート ${date}
 
             ### Lighthouse CI 実行結果
-            詳細レポートは Artifacts を参照してください。
+            詳細レポートは Artifacts または GCP リンクを参照してください。
 
             ---
             *自動生成レポート by GitHub Actions*`;
@@ -142,7 +159,7 @@ jobs:
           pip freeze | safety check --json > safety-report.json || true
           echo "safety_issues=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo 0)" >> $GITHUB_OUTPUT
 
-      - name: Configure git user from secrets
+      - name: Configure git user
         run: |
           git config --local user.name "${{ secrets.GIT_USER_NAME }}"
           git config --local user.email "${{ secrets.GIT_USER_EMAIL }}"
