@@ -8,7 +8,10 @@
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 20",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist .lighthouseci",
+    "lighthouse": "npm run clean && npm run build && npx lhci autorun",
+    "lighthouse:debug": "npm run clean && npm run build && npx lhci autorun --verbose"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
@@ -20,6 +23,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.15.1",
     "@types/leaflet": "^1.9.8",
     "@types/node": "^24.3.0",
     "@types/react": "^18.2.66",
@@ -30,6 +34,7 @@
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.6",
+    "http-server": "^14.1.1",
     "typescript": "^5.2.2",
     "vite": "^5.2.0"
   }

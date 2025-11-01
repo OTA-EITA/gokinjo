@@ -72,6 +72,35 @@ docs: ## ドキュメント生成
 	@echo "README: README.md"
 	@echo "ドキュメント確認完了"
 
+# Frontend関連
+frontend-install: ## フロントエンド依存関係をインストール
+	@echo "フロントエンド依存関係をインストール中..."
+	cd frontend && npm install
+	@echo "インストール完了"
+
+frontend-dev: ## フロントエンド開発サーバー起動
+	@echo "フロントエンド開発サーバーを起動..."
+	cd frontend && npm run dev
+
+frontend-build: ## フロントエンドをビルド
+	@echo "フロントエンドをビルド中..."
+	cd frontend && npm run clean && npm run build
+	@echo "ビルド完了: frontend/dist/"
+
+frontend-lint: ## フロントエンドコード品質チェック
+	@echo "フロントエンドコード品質チェック..."
+	cd frontend && npm run lint
+
+frontend-lighthouse: ## Lighthouse CI実行（パフォーマンス測定）
+	@echo "Lighthouse CI実行中..."
+	cd frontend && npm run lighthouse
+	@echo "結果: frontend/.lighthouseci/"
+
+frontend-clean: ## フロントエンドビルド成果物を削除
+	@echo "フロントエンドをクリーンアップ中..."
+	cd frontend && npm run clean
+	@echo "クリーンアップ完了"
+
 # ETL Airflow環境管理
 airflow-start: ## Airflow ETL環境を起動
 	@echo "Airflow ETL環境を起動しています..."
@@ -135,21 +164,10 @@ check-data: ## データベース状態確認
 
 etl-run: airflow-trigger ## ETL実行 (DAGトリガー)
 
-# DDL修正・制約管理（統合完了につき不要）
-# fix-constraints: ## UNIQUE制約を修正（DDL・DAG整合性問題を解決）
-# 	@echo "🔧 DDL・DAG整合性修正を実行中..."
-# 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/fix_unique_constraints.sql
-# 	@echo "✅ UNIQUE制約修正完了"
-
-# fix-geometry-constraints: ## GEOMETRY型対応UNIQUE制約修正（最終解決版）
-# 	@echo "🔧 GEOMETRY対応UNIQUE制約修正を実行中..."
-# 	cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -f /docker-entrypoint-initdb.d/fix_geometry_unique_constraint.sql
-# 	@echo "✅ GEOMETRY対応UNIQUE制約修正完了"
-
 db-backup: ## データベースバックアップ
 	@echo "データベースバックアップ中..."
 	mkdir -p backups
-	cd deployment && docker-compose exec -T postgis pg_dump -U postgres neighborhood_mapping > ../backups/db_backup_$(date +%Y%m%d_%H%M%S).sql
+	cd deployment && docker-compose exec -T postgis pg_dump -U postgres neighborhood_mapping > ../backups/db_backup_$(shell date +%Y%m%d_%H%M%S).sql
 	@echo "バックアップ完了: backups/"
 
 validate-ddl: ## DDL・DAG整合性チェック
@@ -159,9 +177,6 @@ validate-ddl: ## DDL・DAG整合性チェック
 
 # 開発用ショートカット
 dev: setup start ## セットアップ + 起動 (開発開始時)
-
-fix-and-test: fix-constraints airflow-restart airflow-run-dag ## 制約修正 + Airflow再起動 + DAGテスト実行
-	@echo "制約修正・テスト実行完了"
 
 reset: clean setup start ## 完全リセット + 起動
 
