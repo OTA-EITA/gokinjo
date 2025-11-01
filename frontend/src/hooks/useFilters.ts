@@ -152,7 +152,11 @@ export const useFilters = (
       case 'Enter':
         e.preventDefault();
         if (selectedSuggestionIndex >= 0 && selectedSuggestionIndex < searchSuggestions.length) {
-          handleSuggestionClick(searchSuggestions[selectedSuggestionIndex]);
+          const suggestion = searchSuggestions[selectedSuggestionIndex];
+          setFilterState(prev => ({ ...prev, searchTerm: suggestion }));
+          setShowSuggestions(false);
+          setSearchSuggestions([]);
+          setSelectedSuggestionIndex(-1);
         }
         break;
       case 'Escape':

@@ -92,6 +92,7 @@ export const useCharts = (
     return () => {
       clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showStatistics, statisticsData]);
 
   return {

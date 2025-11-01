@@ -102,17 +102,18 @@ const App: React.FC = () => {
       }, 2000);
       return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     mapDisplay.displayDataOnMap();
-  }, [mapDisplay.displayDataOnMap]);
+  }, [mapDisplay]);
 
   useEffect(() => {
     if (mapHook.map) {
       mapHook.changeTileLayer(mapSettings.map_mode, mapSettings.animation_enabled);
     }
-  }, [mapSettings.map_mode, mapSettings.animation_enabled, mapHook.map]);
+  }, [mapSettings.map_mode, mapSettings.animation_enabled, mapHook]);
 
   useEffect(() => {
     if (dataFetch.areas.length > 0 && dataFetch.schools.length > 0) {

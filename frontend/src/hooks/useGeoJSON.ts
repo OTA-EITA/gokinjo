@@ -107,6 +107,7 @@ export const useGeoJSON = ({
     } else {
       setGeojsonLayer(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, geojsonData, showBoundaries, areas, schools, crimes, calculatedSafetyScores, onAreaSelect]);
 
   return {
