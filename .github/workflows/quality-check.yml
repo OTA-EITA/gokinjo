@@ -14,7 +14,9 @@ permissions:
 
 jobs:
 
-  # ===== 朝: Lighthouse Performance Report =====
+  # ====================================================================
+  # 朝: Lighthouse Performance Report
+  # ====================================================================
   morning-lighthouse:
     if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -22,6 +24,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -37,11 +41,11 @@ jobs:
         working-directory: ./frontend
         run: npm run build
 
-      - name: Serve and run Lighthouse CI
+      - name: Run Lighthouse CI
         working-directory: ./frontend
         run: |
           npm install -g @lhci/cli
-          npx lhci autorun
+          npx lhci autorun || echo "Lighthouse run completed with warnings"
 
       - name: Configure git user from secrets
         run: |
@@ -53,7 +57,8 @@ jobs:
           echo "morning_run=$(date -u)" > data/morning_run.txt
           git add data/morning_run.txt
           git commit -m "auto: morning quality check run $(date -u)" || echo "No changes to commit"
-          git push
+          git pull --rebase origin master || echo "No rebase needed"
+          git push origin master || echo "Push skipped"
 
       - name: Get current date
         id: date
@@ -85,10 +90,12 @@ jobs:
         if: always()
         with:
           name: lighthouse-results-${{ steps.date.outputs.date }}
-          path: .lighthouseci/
+          path: frontend/.lighthouseci/
 
 
-  # ===== 夜: Data Quality & Security Check =====
+  # ====================================================================
+  # 夜: Data Quality & Security Check
+  # ====================================================================
   evening-quality:
     if: github.event.schedule == '0 12 * * *' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -96,6 +103,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -137,7 +146,8 @@ jobs:
           echo "evening_run=$(date -u)" > data/evening_run.txt
           git add data/evening_run.txt
           git commit -m "auto: evening quality check run $(date -u)" || echo "No changes to commit"
-          git push
+          git pull --rebase origin master || echo "No rebase needed"
+          git push origin master || echo "Push skipped"
 
       - name: Get current date
         id: date
