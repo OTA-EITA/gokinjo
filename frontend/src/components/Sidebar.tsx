@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { 
   Area, 
   School, 
   Crime, 
-  SafetyScore, 
   LayerState, 
   FilterState, 
   StatisticsData,
@@ -36,7 +35,6 @@ interface SidebarProps {
   showFilters: boolean;
   filteredSchools: School[];
   filteredCrimes: Crime[];
-  filteredSafetyScores: SafetyScore[];
   filteredAreas: Area[];
   availableCrimeCategories: string[];
   searchSuggestions: string[];
@@ -91,7 +89,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   showFilters,
   filteredSchools,
   filteredCrimes,
-  filteredSafetyScores,
   filteredAreas,
   availableCrimeCategories,
   searchSuggestions,
