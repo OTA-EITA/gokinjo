@@ -1,0 +1,178 @@
+name: Frontend Quality Check
+
+on:
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-check.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - 'frontend/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  frontend-quality:
+    runs-on: ubuntu-latest
+    name: Frontend Build & Lighthouse CI
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build structure
+        run: |
+          echo "=== Checking build output ==="
+          ls -la dist/
+          
+          # dist/dist がないことを確認
+          if [ -d "dist/dist" ]; then
+            echo "❌ Error: Nested dist/dist/ directory found"
+            echo "This indicates files in public/ directory are being incorrectly copied"
+            exit 1
+          fi
+          
+          # 必須ファイルの存在確認
+          if [ ! -f "dist/index.html" ]; then
+            echo "❌ Error: dist/index.html not found"
+            exit 1
+          fi
+          
+          if [ ! -d "dist/assets" ]; then
+            echo "⚠️  Warning: dist/assets/ directory not found"
+          fi
+          
+          echo "✅ Build structure validated"
+
+      - name: Run Lighthouse CI
+        run: npx lhci autorun
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse Lighthouse results
+        id: lighthouse
+        if: always()
+        run: |
+          if [ -f ".lighthouseci/manifest.json" ]; then
+            echo "manifest_found=true" >> $GITHUB_OUTPUT
+            
+            # 最新のレポートファイルを取得
+            LATEST_REPORT=$(ls -t .lighthouseci/lhr-*.json 2>/dev/null | head -1)
+            
+            if [ -n "$LATEST_REPORT" ]; then
+              echo "report_file=$LATEST_REPORT" >> $GITHUB_OUTPUT
+              
+              # スコアを抽出
+              PERF=$(jq -r '.categories.performance.score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
+              ACC=$(jq -r '.categories.accessibility.score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
+              BP=$(jq -r '.categories["best-practices"].score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
+              SEO=$(jq -r '.categories.seo.score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
+              
+              echo "performance=$PERF" >> $GITHUB_OUTPUT
+              echo "accessibility=$ACC" >> $GITHUB_OUTPUT
+              echo "best_practices=$BP" >> $GITHUB_OUTPUT
+              echo "seo=$SEO" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "manifest_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment PR with Lighthouse results
+        if: github.event_name == 'pull_request' && steps.lighthouse.outputs.manifest_found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const perf = '${{ steps.lighthouse.outputs.performance }}';
+            const acc = '${{ steps.lighthouse.outputs.accessibility }}';
+            const bp = '${{ steps.lighthouse.outputs.best_practices }}';
+            const seo = '${{ steps.lighthouse.outputs.seo }}';
+            
+            const getEmoji = (score) => {
+              const num = parseFloat(score);
+              if (isNaN(num)) return '❓';
+              if (num >= 90) return '🟢';
+              if (num >= 50) return '🟡';
+              return '🔴';
+            };
+            
+            const comment = `## 🚦 Lighthouse CI Results
+            
+            | Category | Score | Status |
+            |----------|-------|--------|
+            | Performance | ${perf}% | ${getEmoji(perf)} |
+            | Accessibility | ${acc}% | ${getEmoji(acc)} |
+            | Best Practices | ${bp}% | ${getEmoji(bp)} |
+            | SEO | ${seo}% | ${getEmoji(seo)} |
+            
+            ### 📊 Details
+            - Build: ✅ Successful
+            - Type Check: ✅ Passed
+            - Lint: ⚠️  Check warnings above
+            
+            <details>
+            <summary>View full Lighthouse report</summary>
+            
+            Download the full report from the [Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+            
+            </details>
+            
+            ---
+            *Automated by Lighthouse CI*`;
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+
+      - name: Upload Lighthouse results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lighthouse-results-${{ github.sha }}
+          path: |
+            frontend/.lighthouseci/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Check Lighthouse assertions
+        if: steps.lighthouse.outputs.manifest_found == 'true'
+        run: |
+          PERF=${{ steps.lighthouse.outputs.performance }}
+          
+          if (( $(echo "$PERF < 70" | bc -l) )); then
+            echo "⚠️  Warning: Performance score ($PERF%) is below threshold (70%)"
+            echo "Consider optimizing bundle size or lazy loading"
+          else
+            echo "✅ Performance score is acceptable: $PERF%"
+          fi
