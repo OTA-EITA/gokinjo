@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { MAP_CONFIG } from '../constants';
 
 declare const L: any;
@@ -67,7 +67,7 @@ export const useMap = (): UseMapReturn => {
       map.removeLayer(currentTileLayer);
     }
 
-    const tileConfig = MAP_CONFIG.TILE_LAYERS[mode];
+    const tileConfig = MAP_CONFIG.TILE_LAYERS[mode as keyof typeof MAP_CONFIG.TILE_LAYERS];
     const newTileLayer = L.tileLayer(tileConfig.url, {
       attribution: tileConfig.attribution,
       maxZoom: 18,
