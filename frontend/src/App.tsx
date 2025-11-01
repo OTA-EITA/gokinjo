@@ -216,7 +216,6 @@ const App: React.FC = () => {
           showFilters={showFilters}
           filteredSchools={filters.filteredSchools}
           filteredCrimes={filters.filteredCrimes}
-          filteredSafetyScores={filters.filteredSafetyScores}
           filteredAreas={filters.filteredAreas}
           availableCrimeCategories={filters.availableCrimeCategories}
           searchSuggestions={filters.searchSuggestions}
