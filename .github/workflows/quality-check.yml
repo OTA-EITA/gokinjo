@@ -107,23 +107,20 @@ jobs:
         if: github.event_name != 'pull_request'
         working-directory: .
         run: |
-          mkdir -p data
-          echo "morning_run=$(date -u)" > data/morning_run.txt
-          git add data/morning_run.txt
-          git commit -m "auto: morning quality check run $(date -u)" || echo "No changes to commit"
+          DATE=$(date +'%Y-%m-%d')
+          mkdir -p data/quality-checks
+          echo "morning_run=$(date -u)" > "data/quality-checks/morning-${DATE}.txt"
+          git add "data/quality-checks/morning-${DATE}.txt"
+          git commit -m "auto: morning quality check ${DATE}" || echo "No changes to commit"
 
           git fetch origin master
-          git rebase origin/master || {
-            echo "Conflict detected. Using ours strategy."
+          git pull --rebase origin master || {
+            echo "Rebase failed, using merge..."
             git rebase --abort || true
-            git merge origin/master --strategy-option=ours || true
+            git pull origin master
           }
 
-          git push origin HEAD:master || {
-            echo "Push failed, retrying with rebase..."
-            git pull --rebase origin master || true
-            git push origin HEAD:master
-          }
+          git push origin HEAD:master
 
       - name: Comment on PR with Lighthouse results
         if: github.event_name == 'pull_request'
@@ -237,23 +234,20 @@ jobs:
 
       - name: Commit daily marker (evening)
         run: |
-          mkdir -p data
-          echo "evening_run=$(date -u)" > data/evening_run.txt
-          git add data/evening_run.txt
-          git commit -m "auto: evening quality check run $(date -u)" || echo "No changes to commit"
+          DATE=$(date +'%Y-%m-%d')
+          mkdir -p data/quality-checks
+          echo "evening_run=$(date -u)" > "data/quality-checks/evening-${DATE}.txt"
+          git add "data/quality-checks/evening-${DATE}.txt"
+          git commit -m "auto: evening quality check ${DATE}" || echo "No changes to commit"
 
           git fetch origin master
-          git rebase origin/master || {
-            echo "Conflict detected. Using ours strategy."
+          git pull --rebase origin master || {
+            echo "Rebase failed, using merge..."
             git rebase --abort || true
-            git merge origin/master --strategy-option=ours || true
+            git pull origin master
           }
 
-          git push origin HEAD:master || {
-            echo "Push failed, retrying with rebase..."
-            git pull --rebase origin master || true
-            git push origin HEAD:master
-          }
+          git push origin HEAD:master
 
       - name: Get current date
         id: date
