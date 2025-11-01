@@ -113,7 +113,11 @@ jobs:
         if: always()
         with:
           name: lighthouse-results-${{ steps.date.outputs.date }}
-          path: frontend/.lighthouseci/
+          path: |
+            ./frontend/.lighthouseci/**
+            frontend/.lighthouseci/**/*.json
+            frontend/.lighthouseci/**/*.html
+    
 
 
   # ====================================================================
