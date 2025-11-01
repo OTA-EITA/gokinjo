@@ -1,0 +1,4 @@
+# Quality check markers are stored here
+# Format: morning-YYYY-MM-DD.txt or evening-YYYY-MM-DD.txt
+#
+# These files prevent merge conflicts by using unique filenames per day
