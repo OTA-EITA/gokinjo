@@ -107,7 +107,7 @@ jobs:
         if: always() && steps.verify-lighthouse.outputs.exists == 'true'
         with:
           name: lighthouse-results-${{ steps.date.outputs.date }}-${{ github.sha }}
-          path: .lighthouseci/
+          path: frontend/.lighthouseci/
           if-no-files-found: error
           retention-days: 30
 
