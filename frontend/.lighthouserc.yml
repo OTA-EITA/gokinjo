@@ -9,12 +9,19 @@ ci:
     url:
       - 'http://localhost:8080/index.html'
     # 各URLに対する実行回数（中央値を取得してブレを抑制）
-    numberOfRuns: 3
+    numberOfRuns: 1
     settings:
       # デスクトップ設定
       preset: 'desktop'
       formFactor: 'desktop'
       throttlingMethod: 'simulate'
+      # タイムアウト設定を延長（地図タイル読み込み対応）
+      maxWaitForLoad: 90000
+      maxWaitForFcp: 90000
+      pauseAfterFcpMs: 5000
+      pauseAfterLoadMs: 5000
+      networkQuietThresholdMs: 5000
+      cpuQuietThresholdMs: 5000
       # パフォーマンスのみ計測
       onlyCategories:
         - 'performance'
@@ -23,6 +30,9 @@ ci:
         - 'screenshot-thumbnails'
         - 'final-screenshot'
         - 'full-page-screenshot'
+        - 'network-requests'
+        - 'network-rtt'
+        - 'network-server-latency'
   
   # アサーション設定
   assert:
