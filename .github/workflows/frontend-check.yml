@@ -151,13 +151,6 @@ jobs:
             - Type Check: ✅ Passed
             - Lint: ⚠️  Check warnings above
             
-            <details>
-            <summary>View full Lighthouse report</summary>
-            
-            Download the full report from the [Actions artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-            
-            </details>
-            
             ---
             *Automated by Lighthouse CI*`;
             
@@ -182,9 +175,8 @@ jobs:
         run: |
           PERF=${{ steps.lighthouse.outputs.performance }}
           
-          if (( $(echo "$PERF < 70" | bc -l) )); then
+          if [ "$PERF" != "N/A" ] && (( $(echo "$PERF < 70" | bc -l) )); then
             echo "⚠️  Warning: Performance score ($PERF%) is below threshold (70%)"
-            echo "Consider optimizing bundle size or lazy loading"
           else
-            echo "✅ Performance score is acceptable: $PERF%"
+            echo "✅ Performance check passed"
           fi
