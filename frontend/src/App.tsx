@@ -97,10 +97,7 @@ const App: React.FC = () => {
       dataFetch.checkApiHealth();
       dataFetch.loadAreas();
     } else {
-      const timer = setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-      return () => clearTimeout(timer);
+      console.warn('Leaflet or heat layer plugin not yet loaded. Waiting for dependencies...');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
