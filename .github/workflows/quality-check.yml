@@ -67,16 +67,16 @@ jobs:
           ls -la dist/
           
           if [ -d "dist/dist" ]; then
-            echo "❌ Error: Nested dist/dist/ detected"
+            echo "ERROR: Nested dist/dist/ detected"
             exit 1
           fi
           
           if [ ! -f "dist/index.html" ]; then
-            echo "❌ Error: dist/index.html not found"
+            echo "ERROR: dist/index.html not found"
             exit 1
           fi
           
-          echo "✅ Build output verified"
+          echo "Build output verified successfully"
 
       - name: Run Lighthouse CI
         run: |
@@ -95,11 +95,11 @@ jobs:
         run: |
           if [ -d ".lighthouseci" ] && [ "$(ls -A .lighthouseci)" ]; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Lighthouse results found:"
+            echo "Lighthouse results found:"
             ls -lh .lighthouseci/
           else
             echo "exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Warning: Lighthouse results directory is empty or missing"
+            echo "Warning: Lighthouse results directory is empty or missing"
           fi
 
       - name: Upload Lighthouse results
@@ -140,9 +140,11 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const manifestPath = 'frontend/.lighthouseci/manifest.json';
+            const path = require('path');
+            const manifestPath = path.join(process.env.GITHUB_WORKSPACE, 'frontend', '.lighthouseci', 'manifest.json');
             
             let comment = '## Lighthouse CI Results\n\n';
             
@@ -173,9 +175,9 @@ jobs:
             const issueBody = `## 朝の品質チェックレポート ${date}
 
             ### Lighthouse CI 実行結果
-            - ✅ フロントエンドビルド成功
-            - ✅ Lighthouse CI 実行完了
-            - 📊 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
+            - フロントエンドビルド成功
+            - Lighthouse CI 実行完了
+            - 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
 
             ### チェック項目
             - TypeScript型チェック
@@ -279,16 +281,16 @@ jobs:
             const issueBody = `## 夜の品質チェックレポート ${date}
 
             ### コード品質チェック結果
-            - 🔍 Ruff: ${ruff} 件
-            - 🔒 Bandit: ${bandit} 件
-            - 🛡️ Safety: ${safety} 件
+            - Ruff: ${ruff} 件
+            - Bandit: ${bandit} 件
+            - Safety: ${safety} 件
 
             ### チェック項目
             - Python コードスタイル検証
             - セキュリティ脆弱性スキャン
             - 依存関係の安全性確認
 
-            📊 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
+            詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
 
             ---
             *自動生成レポート by GitHub Actions*`;
