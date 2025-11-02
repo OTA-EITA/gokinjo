@@ -36,6 +36,24 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Cache Lighthouse Chrome
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/.cache/puppeteer
+          key: ${{ runner.os }}-lighthouse-chrome-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-lighthouse-chrome-
+
+      - name: Cache build output
+        uses: actions/cache@v4
+        with:
+          path: frontend/dist
+          key: ${{ runner.os }}-build-${{ hashFiles('frontend/src/**/*', 'frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
       - name: Install dependencies
         run: npm ci
 
@@ -54,14 +72,11 @@ jobs:
           echo "=== Checking build output ==="
           ls -la dist/
           
-          # dist/dist がないことを確認
           if [ -d "dist/dist" ]; then
             echo "❌ Error: Nested dist/dist/ directory found"
-            echo "This indicates files in public/ directory are being incorrectly copied"
             exit 1
           fi
           
-          # 必須ファイルの存在確認
           if [ ! -f "dist/index.html" ]; then
             echo "❌ Error: dist/index.html not found"
             exit 1
@@ -85,13 +100,11 @@ jobs:
           if [ -f ".lighthouseci/manifest.json" ]; then
             echo "manifest_found=true" >> $GITHUB_OUTPUT
             
-            # 最新のレポートファイルを取得
             LATEST_REPORT=$(ls -t .lighthouseci/lhr-*.json 2>/dev/null | head -1)
             
             if [ -n "$LATEST_REPORT" ]; then
               echo "report_file=$LATEST_REPORT" >> $GITHUB_OUTPUT
               
-              # スコアを抽出
               PERF=$(jq -r '.categories.performance.score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
               ACC=$(jq -r '.categories.accessibility.score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
               BP=$(jq -r '.categories["best-practices"].score * 100' "$LATEST_REPORT" 2>/dev/null || echo "N/A")
