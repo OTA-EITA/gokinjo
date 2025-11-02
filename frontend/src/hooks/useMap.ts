@@ -44,17 +44,29 @@ export const useMap = (): UseMapReturn => {
         return;
       }
 
-      const mapInstance = L.map('map').setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
+      const mapInstance = L.map('map', {
+        preferCanvas: true,
+        fadeAnimation: false,
+        zoomAnimation: false
+      }).setView(MAP_CONFIG.CENTER, MAP_CONFIG.DEFAULT_ZOOM);
 
       const initialTileLayer = L.tileLayer(MAP_CONFIG.TILE_LAYERS.standard.url, {
         attribution: MAP_CONFIG.TILE_LAYERS.standard.attribution,
-        maxZoom: 18
+        maxZoom: 18,
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+        maxNativeZoom: 18,
+        keepBuffer: 2
       });
+      
+      initialTileLayer.on('tileerror', function(error: any) {
+        console.warn('Tile loading error, using fallback:', error);
+      });
+      
       initialTileLayer.addTo(mapInstance);
       setCurrentTileLayer(initialTileLayer);
 
       setMap(mapInstance);
-      console.log('Map initialized successfully');
+      console.log('Map initialized successfully with performance optimizations');
     } catch (error) {
       console.error('Failed to initialize map:', error);
     }
