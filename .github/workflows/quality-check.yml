@@ -79,7 +79,10 @@ jobs:
           echo "✅ Build output verified"
 
       - name: Run Lighthouse CI
-        run: npx lhci autorun
+        run: |
+          npx lhci autorun
+          echo "=== Lighthouse CI Output Verification ==="
+          ls -la .lighthouseci/ || echo "Warning: .lighthouseci directory not found"
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -87,14 +90,25 @@ jobs:
         id: date
         run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
+      - name: Verify Lighthouse output
+        id: verify-lighthouse
+        run: |
+          if [ -d ".lighthouseci" ] && [ "$(ls -A .lighthouseci)" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Lighthouse results found:"
+            ls -lh .lighthouseci/
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Warning: Lighthouse results directory is empty or missing"
+          fi
+
       - name: Upload Lighthouse results
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.verify-lighthouse.outputs.exists == 'true'
         with:
           name: lighthouse-results-${{ steps.date.outputs.date }}-${{ github.sha }}
-          path: |
-            frontend/.lighthouseci/
-          if-no-files-found: warn
+          path: .lighthouseci/
+          if-no-files-found: error
           retention-days: 30
 
       - name: Configure Git user
