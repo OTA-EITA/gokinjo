@@ -87,9 +87,11 @@ echo ""
 # Step 6: Data quality checks
 echo "[6/6] Running data quality checks..."
 
-# Check for duplicates
-DUPLICATE_SCHOOLS=$(cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -tAc "SELECT COUNT(*) - COUNT(DISTINCT location_hash) FROM schools;")
-DUPLICATE_CRIMES=$(cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -tAc "SELECT COUNT(*) - COUNT(DISTINCT location_hash) FROM crimes;")
+# Check for duplicate schools (using location geometry directly)
+DUPLICATE_SCHOOLS=$(cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -tAc "SELECT COUNT(*) FROM (SELECT location, COUNT(*) as cnt FROM schools GROUP BY ST_AsText(location) HAVING COUNT(*) > 1) as duplicates;")
+
+# Check for duplicate crimes (using location_hash)
+DUPLICATE_CRIMES=$(cd deployment && docker-compose exec -T postgis psql -U postgres -d neighborhood_mapping -tAc "SELECT COUNT(*) - COUNT(DISTINCT location_hash) FROM crimes WHERE location_hash IS NOT NULL;")
 
 if [ "$DUPLICATE_SCHOOLS" -eq 0 ] && [ "$DUPLICATE_CRIMES" -eq 0 ]; then
     echo -e "${GREEN}No duplicates found${NC}"
@@ -128,4 +130,5 @@ echo "Next steps:"
 echo "1. Check Airflow UI: http://localhost:8082"
 echo "2. Verify on frontend: http://localhost:3001"
 echo "3. Check API: curl http://localhost:8081/api/schools?ward_code=13107"
+echo "4. Run detailed verification: ./scripts/verify_data_quality.sh"
 echo ""
