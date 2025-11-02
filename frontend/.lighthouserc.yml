@@ -1,0 +1,38 @@
+# Lighthouse CI Configuration
+ci:
+  collect:
+    # ビルド済みの静的ファイルを配信
+    staticDistDir: './dist'
+    # 開発サーバーを起動（--silentで静かに）
+    startServerCommand: 'node ./node_modules/http-server/bin/http-server ./dist -p 8080 --silent'
+    # 計測対象URL
+    url:
+      - 'http://localhost:8080/index.html'
+    # 各URLに対する実行回数（中央値を取得してブレを抑制）
+    numberOfRuns: 3
+    settings:
+      # デスクトップ設定
+      preset: 'desktop'
+      formFactor: 'desktop'
+      throttlingMethod: 'simulate'
+      # パフォーマンスのみ計測
+      onlyCategories:
+        - 'performance'
+      # 不要な監査をスキップして高速化
+      skipAudits:
+        - 'screenshot-thumbnails'
+        - 'final-screenshot'
+        - 'full-page-screenshot'
+  
+  # アサーション設定
+  assert:
+    assertions:
+      'categories:performance':
+        - 'warn'
+        - minScore: 0.7
+  
+  # アップロード設定
+  upload:
+    # ファイルシステムに保存
+    target: 'filesystem'
+    outputDir: './.lighthouseci'
