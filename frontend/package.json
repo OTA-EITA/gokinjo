@@ -10,9 +10,9 @@
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist .lighthouseci",
-    "lighthouse": "npm run clean && npm run build && npx lhci autorun",
-    "lighthouse:debug": "npm run clean && npm run build && npx lhci autorun --verbose",
-    "lighthouse:quick": "npm run clean && npm run build && LHCI_RUNS=1 npx lhci autorun"
+    "lighthouse": "npm run clean && npm run build && lhci autorun",
+    "lighthouse:mobile": "npm run clean && npm run build && lhci autorun --collect.settings.preset=mobile",
+    "lighthouse:desktop": "npm run clean && npm run build && lhci autorun --collect.settings.preset=desktop"
   },
   "dependencies": {
     "chart.js": "^4.4.0",
