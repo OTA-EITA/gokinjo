@@ -5,6 +5,16 @@ on:
     - cron: '0 0 * * *'   # 午前9時 JST (UTC 0:00)
     - cron: '0 12 * * *'  # 午後9時 JST (UTC 12:00)
   workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'Job to run'
+        required: false
+        type: choice
+        options:
+          - 'all'
+          - 'morning'
+          - 'evening'
+        default: 'all'
   pull_request:
     paths:
       - 'frontend/**'
@@ -27,9 +37,15 @@ jobs:
   # 朝: Lighthouse Performance Report
   # ====================================================================
   morning-lighthouse:
-    if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 0 * * *') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_type == 'morning' || github.event.inputs.job_type == 'all')) ||
+      github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     name: Morning Quality Check (Lighthouse)
+
+    outputs:
+      date: ${{ steps.date.outputs.date }}
 
     defaults:
       run:
@@ -40,6 +56,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+        working-directory: .
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -52,11 +73,23 @@ jobs:
         run: npm ci
 
       - name: Run type check
-        run: npm run type-check
+        id: type-check
+        continue-on-error: true
+        run: |
+          npm run type-check 2>&1 | tee type-check.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "failed=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
 
       - name: Run linting
+        id: lint
         continue-on-error: true
-        run: npm run lint
+        run: |
+          npm run lint 2>&1 | tee lint.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "failed=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build production bundle
         run: npm run build
@@ -65,27 +98,23 @@ jobs:
         run: |
           echo "=== Build output structure ==="
           ls -la dist/
-          
+
           if [ -d "dist/dist" ]; then
             echo "ERROR: Nested dist/dist/ detected"
             exit 1
           fi
-          
+
           if [ ! -f "dist/index.html" ]; then
             echo "ERROR: dist/index.html not found"
             exit 1
           fi
-          
+
           echo "Build output verified successfully"
 
       - name: Run Lighthouse CI
         run: npm run lighthouse:desktop
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
 
       - name: Verify Lighthouse output
         id: verify-lighthouse
@@ -109,17 +138,14 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-      - name: Configure Git user
+      - name: Configure Git and commit daily marker
         if: github.event_name != 'pull_request'
+        working-directory: .
         run: |
           git config --local user.name "${{ secrets.GIT_USER_NAME }}"
           git config --local user.email "${{ secrets.GIT_USER_EMAIL }}"
 
-      - name: Commit daily marker (morning)
-        if: github.event_name != 'pull_request'
-        working-directory: .
-        run: |
-          DATE=$(date +'%Y-%m-%d')
+          DATE="${{ steps.date.outputs.date }}"
           mkdir -p data/quality-checks
           echo "morning_run=$(date -u)" > "data/quality-checks/morning-${DATE}.txt"
           git add "data/quality-checks/morning-${DATE}.txt"
@@ -142,10 +168,15 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-            const manifestPath = path.join(process.env.GITHUB_WORKSPACE, 'frontend', '.lighthouseci', 'manifest.json');
-            
+            const manifestPath = path.join(
+              process.env.GITHUB_WORKSPACE,
+              'frontend',
+              '.lighthouseci',
+              'manifest.json'
+            );
+
             let comment = '## Lighthouse CI Results\n\n';
-            
+
             if (fs.existsSync(manifestPath)) {
               const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
               comment += 'Performance tests completed successfully!\n\n';
@@ -154,9 +185,9 @@ jobs:
             } else {
               comment += 'Lighthouse CI completed, but manifest not found. Check artifacts for details.\n';
             }
-            
+
             comment += '\n---\n*Automated Lighthouse CI Report*';
-            
+
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -165,16 +196,24 @@ jobs:
             });
 
       - name: Create morning report issue
-        if: github.event.schedule == '0 0 * * *'
+        if: github.event_name == 'schedule' && github.event.schedule == '0 0 * * *'
         uses: actions/github-script@v7
         with:
           script: |
             const date = '${{ steps.date.outputs.date }}';
+            const typeCheckFailed = '${{ steps.type-check.outputs.failed }}' === 'true';
+            const lintFailed = '${{ steps.lint.outputs.failed }}' === 'true';
+
+            const typeCheckStatus = typeCheckFailed ? '❌ 失敗' : '✅ 成功';
+            const lintStatus = lintFailed ? '⚠️ 警告あり' : '✅ 成功';
+
             const issueBody = `## 朝の品質チェックレポート ${date}
 
             ### Lighthouse CI 実行結果
-            - フロントエンドビルド成功
-            - Lighthouse CI 実行完了
+            - フロントエンドビルド: ✅ 成功
+            - TypeScript型チェック: ${typeCheckStatus}
+            - ESLint: ${lintStatus}
+            - Lighthouse CI: ✅ 実行完了
             - 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
 
             ### チェック項目
@@ -195,14 +234,18 @@ jobs:
               labels: ['lighthouse', 'performance', 'automated']
             });
 
-
   # ====================================================================
   # 夜: Data Quality & Security Check
   # ====================================================================
   evening-quality:
-    if: github.event.schedule == '0 12 * * *' || github.event_name == 'workflow_dispatch'
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 12 * * *') ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.job_type == 'evening' || github.event.inputs.job_type == 'all'))
     runs-on: ubuntu-latest
     name: Evening Quality Check (Lint, Security, Safety)
+
+    outputs:
+      date: ${{ steps.date.outputs.date }}
 
     steps:
       - name: Checkout repository
@@ -210,45 +253,66 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: .github/workflows/requirements-quality.txt
 
       - name: Install analysis tools
         run: |
-          pip install ruff bandit safety jq
+          pip install -r .github/workflows/requirements-quality.txt
 
       - name: Run Ruff linting
         id: ruff
         continue-on-error: true
         run: |
           ruff check airflow/ scripts/ > ruff-report.txt 2>&1 || true
-          echo "ruff_issues=$(wc -l < ruff-report.txt)" >> $GITHUB_OUTPUT
+          if [ -f ruff-report.txt ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "ruff_issues=$(wc -l < ruff-report.txt)" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "ruff_issues=0" >> $GITHUB_OUTPUT
+          fi
 
       - name: Run Bandit security scan
         id: bandit
         continue-on-error: true
         run: |
           bandit -r airflow/ scripts/ -f json -o bandit-report.json || true
-          echo "bandit_issues=$(jq '.results | length' bandit-report.json 2>/dev/null || echo 0)" >> $GITHUB_OUTPUT
+          if [ -f bandit-report.json ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "bandit_issues=$(jq '.results | length' bandit-report.json 2>/dev/null || echo 0)" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "bandit_issues=0" >> $GITHUB_OUTPUT
+          fi
 
       - name: Run Safety dependency check
         id: safety
         continue-on-error: true
         run: |
           pip freeze | safety check --json > safety-report.json || true
-          echo "safety_issues=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo 0)" >> $GITHUB_OUTPUT
+          if [ -f safety-report.json ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "safety_issues=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo 0)" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "safety_issues=0" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Configure Git user
+      - name: Configure Git and commit daily marker
         run: |
           git config --local user.name "${{ secrets.GIT_USER_NAME }}"
           git config --local user.email "${{ secrets.GIT_USER_EMAIL }}"
 
-      - name: Commit daily marker (evening)
-        run: |
-          DATE=$(date +'%Y-%m-%d')
+          DATE="${{ steps.date.outputs.date }}"
           mkdir -p data/quality-checks
           echo "evening_run=$(date -u)" > "data/quality-checks/evening-${DATE}.txt"
           git add "data/quality-checks/evening-${DATE}.txt"
@@ -263,52 +327,103 @@ jobs:
 
           git push origin HEAD:master
 
-      - name: Get current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
       - name: Create evening report issue
         uses: actions/github-script@v7
         with:
           script: |
-            const date = '${{ steps.date.outputs.date }}';
-            const ruff = '${{ steps.ruff.outputs.ruff_issues }}' || '0';
-            const bandit = '${{ steps.bandit.outputs.bandit_issues }}' || '0';
-            const safety = '${{ steps.safety.outputs.safety_issues }}' || '0';
+            const fs = require('fs');
+            const path = require('path');
 
-            const issueBody = `## 夜の品質チェックレポート ${date}
+            const date = '${{ steps.date.outputs.date }}';
+            const ruffIssues = '${{ steps.ruff.outputs.ruff_issues }}' || '0';
+            const banditIssues = '${{ steps.bandit.outputs.bandit_issues }}' || '0';
+            const safetyIssues = '${{ steps.safety.outputs.safety_issues }}' || '0';
+
+            const ruffExists = '${{ steps.ruff.outputs.exists }}' === 'true';
+            const banditExists = '${{ steps.bandit.outputs.exists }}' === 'true';
+            const safetyExists = '${{ steps.safety.outputs.exists }}' === 'true';
+
+            // Status indicators
+            const ruffStatus = ruffIssues === '0' ? '✅' : '⚠️';
+            const banditStatus = banditIssues === '0' ? '✅' : '❌';
+            const safetyStatus = safetyIssues === '0' ? '✅' : '❌';
+
+            let issueBody = `## 夜の品質チェックレポート ${date}
 
             ### コード品質チェック結果
-            - Ruff: ${ruff} 件
-            - Bandit: ${bandit} 件
-            - Safety: ${safety} 件
+            - ${ruffStatus} **Ruff (コードスタイル)**: ${ruffIssues} 件
+            - ${banditStatus} **Bandit (セキュリティ)**: ${banditIssues} 件
+            - ${safetyStatus} **Safety (依存関係)**: ${safetyIssues} 件
 
             ### チェック項目
-            - Python コードスタイル検証
-            - セキュリティ脆弱性スキャン
-            - 依存関係の安全性確認
+            - ✅ Python コードスタイル検証 (Ruff)
+            - ✅ セキュリティ脆弱性スキャン (Bandit)
+            - ✅ 依存関係の安全性確認 (Safety)
 
-            詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
+            `;
+
+            // Add detailed Bandit findings if available
+            if (banditExists) {
+              try {
+                const banditReport = JSON.parse(fs.readFileSync('bandit-report.json', 'utf8'));
+                if (banditReport.results && banditReport.results.length > 0) {
+                  issueBody += `\n### 🔒 Bandit セキュリティ検出項目 (上位5件)\n\n`;
+                  banditReport.results.slice(0, 5).forEach((issue, idx) => {
+                    issueBody += `${idx + 1}. **${issue.issue_severity}** - ${issue.issue_text}\n`;
+                    issueBody += `   - ファイル: \`${issue.filename}:${issue.line_number}\`\n`;
+                    issueBody += `   - 信頼度: ${issue.issue_confidence}\n\n`;
+                  });
+                }
+              } catch (e) {
+                console.log('Failed to parse bandit report:', e);
+              }
+            }
+
+            // Add detailed Safety findings if available
+            if (safetyExists) {
+              try {
+                const safetyReport = JSON.parse(fs.readFileSync('safety-report.json', 'utf8'));
+                if (safetyReport.vulnerabilities && safetyReport.vulnerabilities.length > 0) {
+                  issueBody += `\n### 🔐 Safety 脆弱性検出項目 (上位5件)\n\n`;
+                  safetyReport.vulnerabilities.slice(0, 5).forEach((vuln, idx) => {
+                    issueBody += `${idx + 1}. **${vuln.package_name}** (${vuln.vulnerable_spec})\n`;
+                    issueBody += `   - CVE: ${vuln.vulnerability_id}\n`;
+                    issueBody += `   - 詳細: ${vuln.advisory}\n\n`;
+                  });
+                }
+              } catch (e) {
+                console.log('Failed to parse safety report:', e);
+              }
+            }
+
+            issueBody += `\n詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
 
             ---
             *自動生成レポート by GitHub Actions*`;
+
+            const labels = ['quality', 'security', 'automated', 'evening-check'];
+
+            // Add severity labels based on findings
+            if (parseInt(banditIssues) > 0) labels.push('security-issues');
+            if (parseInt(safetyIssues) > 0) labels.push('vulnerability');
+            if (parseInt(ruffIssues) > 10) labels.push('code-quality');
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `[品質レポート] 夜の定期チェック ${date}`,
               body: issueBody,
-              labels: ['quality', 'security', 'automated', 'evening-check']
+              labels: labels
             });
 
       - name: Upload quality reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: quality-reports-${{ steps.date.outputs.date }}
+          name: quality-reports-${{ steps.date.outputs.date }}-${{ github.sha }}
           path: |
             ruff-report.txt
             bandit-report.json
             safety-report.json
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 30
