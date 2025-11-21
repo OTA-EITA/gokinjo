@@ -59,7 +59,7 @@ class GenericDistrictProcessor:
         sql_parts.append("INSERT INTO schools (name, type, public_private, location, area_id, address)")
         sql_parts.append("SELECT")
         sql_parts.append("    name, type::school_type, public_private::school_ownership, location,")
-        sql_parts.append(f"    (SELECT id FROM areas WHERE ward_code = '{ward_code}' AND town_code = area_town_code),")
+        sql_parts.append(f"    (SELECT id FROM areas WHERE ward_code = '{ward_code}' AND town_code = area_town_code LIMIT 1),")
         sql_parts.append("    address")
         sql_parts.append("FROM (VALUES")
         
@@ -78,7 +78,7 @@ class GenericDistrictProcessor:
         crime_values = []
         for crime in district_data['crimes']:
             lon, lat = crime['location'].split()
-            area_lookup = f"(SELECT id FROM areas WHERE ward_code = '{ward_code}' AND town_code = '{crime['area_town_code']}')"
+            area_lookup = f"(SELECT id FROM areas WHERE ward_code = '{ward_code}' AND town_code = '{crime['area_town_code']}' LIMIT 1)"
             crime_value = f"('{crime['category']}', '{crime['date']}', ST_GeomFromText('POINT({lon} {lat})', 4326), {area_lookup}, '{crime['description']}')"
             crime_values.append(crime_value)
         
