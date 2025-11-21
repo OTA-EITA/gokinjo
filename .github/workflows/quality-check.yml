@@ -408,6 +408,23 @@ jobs:
             echo "safety_issues=0" >> $GITHUB_OUTPUT
           fi
 
+      - name: Run Python tests with coverage
+        id: pytest
+        continue-on-error: true
+        run: |
+          cd airflow
+          pytest tests/ --cov=dags --cov=utils --cov-report=xml --cov-report=term > ../pytest-output.txt 2>&1 || true
+
+          if [ -f coverage.xml ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            COVERAGE=$(grep -oP 'line-rate="\K[0-9.]+' coverage.xml | head -1)
+            COVERAGE_PERCENT=$(echo "$COVERAGE * 100" | bc)
+            echo "coverage=${COVERAGE_PERCENT}" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "coverage=0" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure Git and commit daily marker
         run: |
           git config --local user.name "${{ secrets.GIT_USER_NAME }}"
@@ -439,15 +456,19 @@ jobs:
             const ruffIssues = '${{ steps.ruff.outputs.ruff_issues }}' || '0';
             const banditIssues = '${{ steps.bandit.outputs.bandit_issues }}' || '0';
             const safetyIssues = '${{ steps.safety.outputs.safety_issues }}' || '0';
+            const coverage = '${{ steps.pytest.outputs.coverage }}' || '0';
 
             const ruffExists = '${{ steps.ruff.outputs.exists }}' === 'true';
             const banditExists = '${{ steps.bandit.outputs.exists }}' === 'true';
             const safetyExists = '${{ steps.safety.outputs.exists }}' === 'true';
+            const coverageExists = '${{ steps.pytest.outputs.exists }}' === 'true';
 
             // Status indicators
             const ruffStatus = ruffIssues === '0' ? '✅' : '⚠️';
             const banditStatus = banditIssues === '0' ? '✅' : '❌';
             const safetyStatus = safetyIssues === '0' ? '✅' : '❌';
+            const coverageNum = parseFloat(coverage);
+            const coverageStatus = coverageNum >= 80 ? '✅' : coverageNum >= 60 ? '⚠️' : '❌';
 
             let issueBody = `## 夜の品質チェックレポート ${date}
 
@@ -455,11 +476,13 @@ jobs:
             - ${ruffStatus} **Ruff (コードスタイル)**: ${ruffIssues} 件
             - ${banditStatus} **Bandit (セキュリティ)**: ${banditIssues} 件
             - ${safetyStatus} **Safety (依存関係)**: ${safetyIssues} 件
+            - ${coverageStatus} **テストカバレッジ**: ${coverageNum.toFixed(1)}%
 
             ### チェック項目
             - ✅ Python コードスタイル検証 (Ruff)
             - ✅ セキュリティ脆弱性スキャン (Bandit)
             - ✅ 依存関係の安全性確認 (Safety)
+            - ✅ テストカバレッジ測定 (pytest-cov)
 
             `;
 
@@ -526,8 +549,21 @@ jobs:
             ruff-report.txt
             bandit-report.json
             safety-report.json
+            pytest-output.txt
+            airflow/coverage.xml
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Upload coverage to Codecov
+        if: steps.pytest.outputs.exists == 'true'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./airflow/coverage.xml
+          flags: backend
+          name: backend-coverage
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Notify Slack on security issues
         if: |
