@@ -116,6 +116,69 @@ jobs:
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Save Lighthouse scores to history
+        id: save-scores
+        run: |
+          if [ -f .lighthouseci/manifest.json ]; then
+            DATE="${{ steps.date.outputs.date }}"
+            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+            # Create history directory
+            mkdir -p ../data/lighthouse-history
+
+            # Extract scores and check regression
+            node -e "
+              const fs = require('fs');
+              const manifest = JSON.parse(fs.readFileSync('.lighthouseci/manifest.json', 'utf8'));
+
+              if (manifest.length > 0 && manifest[0].summary) {
+                const summary = manifest[0].summary;
+                const scores = {
+                  date: '${DATE}',
+                  timestamp: '${TIMESTAMP}',
+                  commit: '${GITHUB_SHA}'.substring(0, 7),
+                  performance: summary.performance,
+                  accessibility: summary.accessibility,
+                  bestPractices: summary['best-practices'],
+                  seo: summary.seo,
+                  metrics: {
+                    firstContentfulPaint: manifest[0].details?.audits?.['first-contentful-paint']?.numericValue,
+                    largestContentfulPaint: manifest[0].details?.audits?.['largest-contentful-paint']?.numericValue,
+                    totalBlockingTime: manifest[0].details?.audits?.['total-blocking-time']?.numericValue,
+                    cumulativeLayoutShift: manifest[0].details?.audits?.['cumulative-layout-shift']?.numericValue,
+                    speedIndex: manifest[0].details?.audits?.['speed-index']?.numericValue
+                  }
+                };
+
+                // Check for score regression
+                let regression = false;
+                if (fs.existsSync('../data/lighthouse-history/latest.json')) {
+                  const previous = JSON.parse(fs.readFileSync('../data/lighthouse-history/latest.json', 'utf8'));
+                  const perfDiff = scores.performance - previous.performance;
+
+                  if (perfDiff < -0.05) {
+                    regression = true;
+                    console.log('⚠️ Performance regression detected: ' + (perfDiff * 100).toFixed(1) + '%');
+                    fs.writeFileSync(process.env.GITHUB_OUTPUT, 'regression=true\n', { flag: 'a' });
+                    fs.writeFileSync(process.env.GITHUB_OUTPUT, 'perf_diff=' + (perfDiff * 100).toFixed(1) + '\n', { flag: 'a' });
+                  }
+                }
+
+                // Save individual score file
+                fs.writeFileSync('../data/lighthouse-history/' + scores.date + '.json', JSON.stringify(scores, null, 2));
+
+                // Update latest scores
+                fs.writeFileSync('../data/lighthouse-history/latest.json', JSON.stringify(scores, null, 2));
+
+                console.log('✅ Scores saved successfully');
+              }
+            "
+
+            echo "Lighthouse scores saved to data/lighthouse-history/${DATE}.json"
+          else
+            echo "Lighthouse manifest not found, skipping score save"
+          fi
+
       - name: Verify Lighthouse output
         id: verify-lighthouse
         run: |
@@ -148,7 +211,11 @@ jobs:
           DATE="${{ steps.date.outputs.date }}"
           mkdir -p data/quality-checks
           echo "morning_run=$(date -u)" > "data/quality-checks/morning-${DATE}.txt"
+
+          # Add all quality data
           git add "data/quality-checks/morning-${DATE}.txt"
+          git add data/lighthouse-history/ || true
+
           git commit -m "auto: morning quality check ${DATE}" || echo "No changes to commit"
 
           git fetch origin master
@@ -261,14 +328,23 @@ jobs:
             const typeCheckStatus = typeCheckFailed ? '❌ 失敗' : '✅ 成功';
             const lintStatus = lintFailed ? '⚠️ 警告あり' : '✅ 成功';
 
-            const issueBody = `## 朝の品質チェックレポート ${date}
+            const hasRegression = '${{ steps.save-scores.outputs.regression }}' === 'true';
+            const perfDiff = '${{ steps.save-scores.outputs.perf_diff }}';
+
+            let issueBody = `## 朝の品質チェックレポート ${date}
 
             ### Lighthouse CI 実行結果
             - フロントエンドビルド: ✅ 成功
             - TypeScript型チェック: ${typeCheckStatus}
             - ESLint: ${lintStatus}
-            - Lighthouse CI: ✅ 実行完了
-            - 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
+            - Lighthouse CI: ✅ 実行完了`;
+
+            if (hasRegression) {
+              issueBody += `\n- ⚠️ **パフォーマンス低下検出**: ${perfDiff}%`;
+            }
+
+            issueBody += `\n- 詳細レポートは [Artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) を参照
+            - スコア履歴: [data/lighthouse-history](https://github.com/${{ github.repository }}/tree/master/data/lighthouse-history)
 
             ### チェック項目
             - TypeScript型チェック
