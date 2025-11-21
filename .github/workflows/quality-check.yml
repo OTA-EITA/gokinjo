@@ -234,6 +234,53 @@ jobs:
               labels: ['lighthouse', 'performance', 'automated']
             });
 
+      - name: Notify Slack on morning check failure
+        if: failure() && github.event_name == 'schedule'
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 朝の品質チェックで問題が検出されました",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚨 品質チェック失敗"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ワークフロー:* 朝の品質チェック (Lighthouse)\n*日時:* ${{ steps.date.outputs.date }}\n*ステータス:* 失敗"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*問題:*\n• ビルドまたはテストの失敗\n• 型チェックエラー\n• Lighthouse実行失敗"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "詳細を確認"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+
   # ====================================================================
   # 夜: Data Quality & Security Check
   # ====================================================================
@@ -427,3 +474,112 @@ jobs:
             safety-report.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Notify Slack on security issues
+        if: |
+          github.event_name == 'schedule' &&
+          (steps.bandit.outputs.bandit_issues > 0 || steps.safety.outputs.safety_issues > 0)
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 セキュリティ問題が検出されました",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🔒 セキュリティアラート"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ワークフロー:* 夜の品質チェック (セキュリティ)\n*日時:* ${{ steps.date.outputs.date }}\n*ステータス:* セキュリティ問題検出"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Bandit:*\n${{ steps.bandit.outputs.bandit_issues }} 件"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Safety:*\n${{ steps.safety.outputs.safety_issues }} 件"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*優先度:* 🔴 要対応"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "詳細レポートを確認"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
+
+      - name: Notify Slack on evening check failure
+        if: failure() && github.event_name == 'schedule'
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 夜の品質チェックで問題が検出されました",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚨 品質チェック失敗"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*ワークフロー:* 夜の品質チェック (Python)\n*日時:* ${{ steps.date.outputs.date }}\n*ステータス:* 失敗"
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*問題:*\n• 分析ツールのインストール失敗\n• スキャン実行エラー\n• レポート生成失敗"
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "詳細を確認"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
